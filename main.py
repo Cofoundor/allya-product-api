@@ -78,13 +78,28 @@ def list_surfaces():
 
 @app.get(f"{V1}/surfaces/{{sid}}", response_model=m.Surface)
 def get_surface(sid: str):
-    return m.Surface(**_surface(sid))
+    s = _surface(sid)
+    done = data.ONBOARDED.get(sid, True)
+    return m.Surface(**s, onboarded=done, lock=None if done else data.LOCKS.get(sid))
 
 
 @app.get(f"{V1}/surfaces/{{sid}}/brain", response_model=m.BrainGraph)
 def get_brain(sid: str):
     _surface(sid)
-    return m.BrainGraph(**data.BRAINS[sid])
+    graph = data.BRAINS[sid]
+    if data.ONBOARDED.get(sid, True):
+        return m.BrainGraph(**graph)
+    # semi-complete: the floor's shape is there, but what hangs off it is only
+    # what live work already proves. The rest arrives with the onboarding.
+    kept = []
+    for n in graph["nodes"]:
+        if n["tier"] < 3:
+            kept.append({**n, "provisional": n["tier"] == 2})
+        elif n.get("work"):
+            kept.append(n)
+    ids = {n["id"] for n in kept}
+    links = [l for l in graph["links"] if l[0] in ids and l[1] in ids]
+    return m.BrainGraph(**{**graph, "nodes": kept, "links": links})
 
 
 @app.get(f"{V1}/surfaces/{{sid}}/work", response_model=m.WorkList)
@@ -143,6 +158,39 @@ def post_message(sid: str, body: m.MessageIn):
         if any(k in text for k in keywords):
             return m.Reply(**reply)
     return m.Reply(**convo["fallback"])
+
+
+@app.get(f"{V1}/surfaces/{{sid}}/onboarding", response_model=m.ServiceOnboarding)
+def get_service_onboarding(sid: str):
+    """The four questions that make this floor usable."""
+    _surface(sid)
+    spec = data.SERVICE_ONBOARDING.get(sid)
+    if not spec:
+        raise HTTPException(404, f"'{sid}' has no onboarding of its own")
+    return m.ServiceOnboarding(
+        surface_id=sid,
+        label=data.SURFACES[sid]["label"],
+        status="complete" if data.ONBOARDED.get(sid) else "new",
+        **spec,
+    )
+
+
+@app.post(f"{V1}/surfaces/{{sid}}/onboarding", response_model=m.OnboardingResult)
+def complete_service_onboarding(sid: str, body: m.AnswersIn):
+    _surface(sid)
+    spec = data.SERVICE_ONBOARDING.get(sid)
+    if not spec:
+        raise HTTPException(404, f"'{sid}' has no onboarding of its own")
+    missing = [q["key"] for q in spec["questions"] if not body.answers.get(q["key"], "").strip()]
+    if missing:
+        raise HTTPException(422, f"still unanswered: {', '.join(missing)}")
+    data.ANSWERS[sid] = body.answers
+    data.ONBOARDED[sid] = True
+    return m.OnboardingResult(
+        surface_id=sid,
+        status="complete",
+        learned=[q["learned"] for q in spec["questions"]],
+    )
 
 
 # ---- work actions ------------------------------------------------------

@@ -893,6 +893,240 @@ UNDO_REPLY = "Pulled it back — nothing went out. It’s in your queue again; n
 REVISION_REPLY = "Tell me what’s off and I’ll have a new pass in your panel within the hour. Nothing moves in the meantime."
 
 
+# ---- each floor's own onboarding ---------------------------------------
+#
+# The company onboarding maps the business. This is the floor-level one: four
+# questions that make a service usable, in the same shape and the same voice.
+# Which floors are set up lives here for as long as the process does.
+
+ONBOARDED: dict[str, bool] = {s: False for s in SERVICE_IDS}
+ANSWERS: dict[str, dict[str, str]] = {}
+
+
+def _q(key, tag, sub, q, kind, cluster_label, learned, **kw):
+    i = kw.pop("i", 1)
+    return {
+        "key": key, "tag": tag, "sub": sub, "q": q, "type": kind, "learned": learned,
+        "cluster": {
+            "id": key, "label": cluster_label, "group": f"b{i}",
+            "leaves_from": kw.pop("leaves_from", "answer"),
+            "leaves": kw.pop("leaves", []), "max_leaves": kw.pop("max_leaves", 4),
+        },
+        **kw,
+    }
+
+
+SERVICE_ONBOARDING: dict[str, dict] = {
+    "marketing": {
+        "title": "Set up marketing",
+        "lede": "Four questions. I already know your company — this is the part that’s only about how the market hears you.",
+        "cta": "Start",
+        "synth": [
+            "Reading how you reach people…",
+            "Placing your story against your market…",
+            "Choosing which channels are worth your week…",
+            "Marketing is set up.",
+        ],
+        "done_title": "Marketing is yours now.",
+        "done_lede": "The floor is filled in and the agents can start. Nothing publishes without you.",
+        "done_cta": "Open marketing",
+        "questions": [
+            _q("channels", "Your channels", "Mapping where you show up",
+               "Where does your marketing actually happen today? List everything, even the ones you’ve given up on.",
+               "long", "Channels", "Mapped where your marketing happens", i=1,
+               placeholder="e.g. LinkedIn, a newsletter nobody reads, one reel that did well…",
+               example="LinkedIn posts, an email list of 400, and a landing page.",
+               ack="Good — I can see where you already have ground, and where you don’t."),
+            _q("story", "Your story", "Sharpening the one line",
+               "In one line, what do you want people to say about you when you’re not in the room?",
+               "short", "Story", "Learned the line you want repeated", i=2,
+               placeholder="e.g. they ship faster than anyone that cheap",
+               ack="That’s the sentence everything else has to earn. I’ll hold you to it."),
+            _q("audience", "Who hears it", "Placing your audience",
+               "Who are you trying to reach — and who are you happy to ignore?",
+               "short", "Audience", "Know who you’re talking to", i=3,
+               placeholder="e.g. solo founders pre-revenue; not enterprise",
+               ack="Noted. Ignoring the wrong people is most of the work."),
+            _q("spend", "The budget", "Sizing what’s possible",
+               "How much are you spending on marketing right now?",
+               "choice", "Spend", "Know what you can actually spend", i=4,
+               options=["Nothing yet", "Under ₹10k a month", "₹10k–50k a month", "More than that"],
+               leaves_from="fixed", leaves=["Paid", "Organic"],
+               ack_by_option={
+                   "Nothing yet": "Then everything I do starts organic. That’s the right order anyway.",
+                   "Under ₹10k a month": "Small and testable. I won’t spend it until the organic version works.",
+                   "₹10k–50k a month": "Enough to test properly. I’ll keep it honest against CAC.",
+                   "More than that": "Then the question is what to stop, not what to start.",
+               }),
+        ],
+    },
+    "hiring": {
+        "title": "Set up HR",
+        "lede": "Four questions about who joins and how. It’s the part I can’t guess from your company alone.",
+        "cta": "Start",
+        "synth": ["Reading the roles…", "Learning your bar…", "Shaping day one…", "Hiring is set up."],
+        "done_title": "Hiring is yours now.",
+        "done_lede": "Screening can start. Nobody gets an offer without you.",
+        "done_cta": "Open hiring",
+        "questions": [
+            _q("roles", "The roles", "Mapping who you need",
+               "Who are you trying to hire in the next six months? Titles, or just what needs doing.",
+               "long", "Roles", "Mapped the roles you need", i=1,
+               placeholder="e.g. someone to run ops, a designer eventually, maybe a second engineer",
+               ack="That’s enough to start ranking people against, rather than against a template."),
+            _q("bar", "Your bar", "Learning what good looks like",
+               "What makes someone great on your team — not on paper, in practice?",
+               "short", "The bar", "Learned what good looks like here", i=2,
+               placeholder="e.g. they close things without being chased",
+               ack="That’s a real bar. Résumés don’t show it, so I’ll screen for it directly."),
+            _q("how", "How you hire", "Placing your pipeline",
+               "How do people reach you today?",
+               "choice", "Pipeline", "Know where candidates come from", i=3,
+               options=["Job boards", "Referrals", "Agencies", "Haven’t hired yet"],
+               leaves_from="fixed", leaves=["Inbound", "Referral"],
+               ack_by_option={
+                   "Job boards": "Volume, then. Screening is where I earn my keep.",
+                   "Referrals": "Best signal there is. I’ll help you ask more often.",
+                   "Agencies": "Expensive. Let’s see what we can do before renewing that.",
+                   "Haven’t hired yet": "Clean slate. We’ll do the first one properly.",
+               }),
+            _q("dayone", "Day one", "Shaping the first week",
+               "What does day one look like for someone joining?",
+               "short", "Day one", "Know what you promise on day one", i=4,
+               placeholder="e.g. nothing formal yet — they just start",
+               ack="Then that’s the first thing worth fixing. The first week sets the year."),
+        ],
+    },
+    "pr": {
+        "title": "Set up PR",
+        "lede": "Four questions about the story and who should carry it.",
+        "cta": "Start",
+        "synth": ["Reading your story…", "Checking what’s provable…", "Matching it to who writes…", "PR is set up."],
+        "done_title": "PR is yours now.",
+        "done_lede": "I’ll warm the right people. Nothing gets pitched without you.",
+        "done_cta": "Open PR",
+        "questions": [
+            _q("story", "The story", "Finding the angle",
+               "What’s the story you want written about you? Not the pitch — the thing that’s actually interesting.",
+               "long", "Angle", "Found the story worth telling", i=1,
+               placeholder="e.g. we replaced a ₹3L/mo agency with ₹2,000 and it worked",
+               ack="That’s an angle, not an announcement. Much easier to place."),
+            _q("proof", "The proof", "Checking what holds up",
+               "What have you done that a journalist could actually check?",
+               "short", "Proof", "Know what’s provable", i=2,
+               placeholder="e.g. 13 campaigns for one client in month one",
+               ack="Good — numbers survive editing. Adjectives don’t."),
+            _q("who", "Who reads it", "Placing the audience",
+               "Who needs to read it for it to have been worth doing?",
+               "choice", "Readers", "Know who the coverage is for", i=3,
+               options=["Founders", "Investors", "Customers", "Everyone"],
+               leaves_from="fixed", leaves=["Trade", "Mainstream"],
+               ack_by_option={
+                   "Founders": "Then trade press and founder communities beat mainstream every time.",
+                   "Investors": "A narrower list, and a slower one. Worth doing properly.",
+                   "Customers": "Then coverage is a sales asset. I’ll treat it that way.",
+                   "Everyone": "Nobody, then. I’ll pick one and we’ll aim there first.",
+               }),
+            _q("known", "Who you know", "Mapping relationships",
+               "Which publications or writers already matter to you — or already know you?",
+               "short", "Relationships", "Mapped who already knows you", i=4,
+               placeholder="e.g. nobody yet, but two reporters replied once",
+               ack="A reply is a relationship. I’ll start there rather than cold."),
+        ],
+    },
+    "sales": {
+        "title": "Set up sales",
+        "lede": "Four questions about how money actually arrives.",
+        "cta": "Start",
+        "synth": ["Reading the motion…", "Learning who buys…", "Placing the number…", "Sales is set up."],
+        "done_title": "Sales is yours now.",
+        "done_lede": "I’ll enrich, rank and prepare. You make the calls.",
+        "done_cta": "Open sales",
+        "questions": [
+            _q("motion", "The motion", "Mapping how a sale happens",
+               "Walk me through how a sale actually happens today — from first contact to money.",
+               "long", "Motion", "Mapped how a sale happens", i=1,
+               placeholder="e.g. they DM me, we talk for 20 minutes, they start",
+               ack="Short and human. I’ll keep it that way rather than bolting a funnel onto it."),
+            _q("icp", "Who buys", "Profiling the buyer",
+               "Who buys fastest — and what do they have in common?",
+               "short", "Buyer", "Know who closes fastest", i=2,
+               placeholder="e.g. solo founders who already tried an agency",
+               ack="That’s a pattern I can go and find more of."),
+            _q("price", "The number", "Placing your pricing",
+               "What do you charge, and how?",
+               "short", "Pricing", "Know the number and the shape", i=3,
+               placeholder="e.g. ₹2,000 a month, first month free",
+               ack="Clear. I’ll lead with it rather than hide it — hiding it costs you calls."),
+            _q("source", "Where they come from", "Sizing the pipeline",
+               "Where do most of your leads come from right now?",
+               "choice", "Sources", "Know where leads come from", i=4,
+               options=["Referrals", "Inbound", "Outbound", "Nowhere yet"],
+               leaves_from="fixed", leaves=["Warm", "Cold"],
+               ack_by_option={
+                   "Referrals": "Best margin there is. I’ll make asking systematic.",
+                   "Inbound": "Then content and search are doing sales work. Worth funding.",
+                   "Outbound": "Fine, as long as it’s warm. Cold sequences burn the list.",
+                   "Nowhere yet": "Then we build one channel properly before adding a second.",
+               }),
+        ],
+    },
+    "ops": {
+        "title": "Set up finance & ops",
+        "lede": "Four questions about where the money and the time go.",
+        "cta": "Start",
+        "synth": ["Reading the spend…", "Checking the runway…", "Finding what’s idle…", "Finance is set up."],
+        "done_title": "Finance is yours now.",
+        "done_lede": "I’ll watch the spend and the calendar. Quiet is the correct state here.",
+        "done_cta": "Open finance",
+        "questions": [
+            _q("spend", "The money", "Mapping where it goes",
+               "Where does the money go each month? Rough is fine.",
+               "long", "Spend", "Mapped where the money goes", i=1,
+               placeholder="e.g. hosting, two contractors, a lot of tools I forgot about",
+               ack="That last part is where the savings usually are. I’ll go looking."),
+            _q("runway", "The runway", "Placing the horizon",
+               "How long is your runway at the current burn?",
+               "short", "Runway", "Know how long you have", i=2,
+               placeholder="e.g. about 11 months",
+               ack="Noted. Every decision below this changes depending on that number."),
+            _q("idle", "What’s idle", "Finding the waste",
+               "What are you paying for that you barely use?",
+               "short", "Idle", "Know what’s being wasted", i=3,
+               placeholder="e.g. two analytics tools and a CRM seat for someone who left",
+               ack="I’ll audit those properly and bring you a list, not a lecture."),
+            _q("track", "How you track it", "Placing your books",
+               "How do you keep track of spend today?",
+               "choice", "Books", "Know how spend is tracked", i=4,
+               options=["A spreadsheet", "An accountant", "An app", "Not really"],
+               leaves_from="fixed", leaves=["Recorded", "Reviewed"],
+               ack_by_option={
+                   "A spreadsheet": "Works until it doesn’t. I’ll keep it current for you.",
+                   "An accountant": "Good. I’ll make sure they get clean numbers, not a shoebox.",
+                   "An app": "Fine — I’ll read from it rather than adding a second one.",
+                   "Not really": "Then that’s first. You can’t cut what you can’t see.",
+               }),
+        ],
+    },
+}
+
+# what a floor says when you try to act on it before it's set up
+def _name(sid: str) -> str:
+    """Sentence case, except for the ones that are initials."""
+    label = SURFACES[sid]["label"]
+    return label if label.isupper() else label.lower()
+
+
+LOCKS: dict[str, dict] = {
+    s: {
+        "title": f"{SURFACES[s]['label']} isn’t set up yet.",
+        "blurb": "You can look around all you like. Before I start doing anything here, I need four answers — it takes about a minute.",
+        "cta": f"Set up {_name(s)}",
+    }
+    for s in SERVICE_IDS
+}
+
+
 # ---- the gate ----------------------------------------------------------
 #
 # Dummy sign-in: a couple of seeded accounts and one shared demo password

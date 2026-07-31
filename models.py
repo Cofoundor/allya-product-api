@@ -41,9 +41,22 @@ class BrainHeader(Base):
     back_href: Optional[str] = None
 
 
+class Lock(Base):
+    """Shown when a floor is used before its setup is done. The floor is
+    readable either way — this is what stops an action, not the door."""
+
+    title: str
+    blurb: str
+    cta: str
+
+
 class Surface(Base):
     id: str
     label: str
+    # false until this floor's own onboarding is finished. The floor still
+    # renders; acting on it is what prompts.
+    onboarded: bool = True
+    lock: Optional[Lock] = None
     greeting: str
     hint: str
     placeholder: str
@@ -74,6 +87,8 @@ class BrainNode(Base):
     hidden: bool = False
     # this node opens a surface of its own instead of a panel
     surface: Optional[str] = None
+    # a placeholder until this floor's onboarding fills it in — drawn faintly
+    provisional: bool = False
 
 
 class BrainGraph(Base):
@@ -218,6 +233,63 @@ class WorkAction(Base):
     item: WorkItem
     toast: str
     reply: Reply
+
+
+# ---- a floor's own onboarding ------------------------------------------
+
+class ObCluster(Base):
+    """What an answer grows on the brain. `leaves_from: answer` means the
+    client splits what was typed; `fixed` uses the leaves given here."""
+
+    id: str
+    label: str
+    group: str
+    leaves_from: Literal["answer", "fixed"] = "answer"
+    leaves: list[str] = []
+    max_leaves: int = 4
+
+
+class ObQuestion(Base):
+    key: str
+    tag: str
+    # the live status line under the brain while this one lands
+    sub: str
+    q: str
+    type: Literal["short", "long", "choice"]
+    placeholder: Optional[str] = None
+    example: Optional[str] = None
+    options: list[str] = []
+    # what Allya says back — one line, or one per option for a choice
+    ack: Optional[str] = None
+    ack_by_option: dict[str, str] = {}
+    # the ledger line this answer adds
+    learned: str
+    cluster: ObCluster
+
+
+class ServiceOnboarding(Base):
+    surface_id: str
+    label: str
+    status: Literal["new", "complete"]
+    title: str
+    lede: str
+    cta: str
+    questions: list[ObQuestion]
+    # the beats of the settling animation at the end
+    synth: list[str]
+    done_title: str
+    done_lede: str
+    done_cta: str
+
+
+class AnswersIn(Base):
+    answers: dict[str, str]
+
+
+class OnboardingResult(Base):
+    surface_id: str
+    status: Literal["complete"]
+    learned: list[str]
 
 
 # ---- the gate ----------------------------------------------------------

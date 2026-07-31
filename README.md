@@ -60,6 +60,8 @@ All paths are under `/api/v1`. Field names are **camelCase on the wire**
 | GET | `/surfaces/{sid}/knowledge?period=&date=` | `FactList` |
 | GET | `/surfaces/{sid}/conversation` | `Reply` — the opening beats |
 | POST | `/surfaces/{sid}/conversation/messages` | `Reply` — body `{text}` |
+| GET | `/surfaces/{sid}/onboarding` | `ServiceOnboarding` — the four questions that make a floor usable |
+| POST | `/surfaces/{sid}/onboarding` | `OnboardingResult` — body `{answers}`; unlocks the floor, **422** if any are blank |
 | GET | `/gate` | `Gate` — the sign-in page's copy and the graph behind it |
 | POST | `/session` | `Session` — body `{email, password}`; **201**, or **401** |
 | GET | `/session` | `User` — who the bearer token belongs to, or **401** |
@@ -77,6 +79,19 @@ shipped, `422` on a malformed body or `date`.
 `surface_id` is one of `workspace`, `marketing`, `hiring`, `pr`, `sales`, `ops`.
 The workspace's `/work` returns every service's items; a service returns only
 its own.
+
+### Setting up a floor
+
+Each service floor has its own short onboarding. Until it's done:
+
+- `GET /surfaces/{sid}` returns `onboarded: false` and a `lock` (the copy the
+  UI shows when you try to *act* on the floor — reading it is never blocked);
+- `GET /surfaces/{sid}/brain` returns a **semi-complete** graph: the floor's
+  shape and anything already proven by live work, with the branches marked
+  `provisional`. Posting the answers fills it in.
+
+`ONBOARDED` starts false for all five services and is global to the process,
+not per user — a dummy, like the rest of this.
 
 ### Signing in
 
