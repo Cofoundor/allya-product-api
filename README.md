@@ -60,6 +60,10 @@ All paths are under `/api/v1`. Field names are **camelCase on the wire**
 | GET | `/surfaces/{sid}/knowledge?period=&date=` | `FactList` |
 | GET | `/surfaces/{sid}/conversation` | `Reply` — the opening beats |
 | POST | `/surfaces/{sid}/conversation/messages` | `Reply` — body `{text}` |
+| GET | `/gate` | `Gate` — the sign-in page's copy and the graph behind it |
+| POST | `/session` | `Session` — body `{email, password}`; **201**, or **401** |
+| GET | `/session` | `User` — who the bearer token belongs to, or **401** |
+| DELETE | `/session` | **204**; signing out twice is not an error |
 | GET | `/work/{wid}/review` | `Review` — the approval sheet |
 | POST | `/work/{wid}/approve` | `WorkAction` — `{item, toast, reply}` |
 | POST | `/work/{wid}/undo` | `WorkAction` |
@@ -73,6 +77,22 @@ shipped, `422` on a malformed body or `date`.
 `surface_id` is one of `workspace`, `marketing`, `hiring`, `pr`, `sales`, `ops`.
 The workspace's `/work` returns every service's items; a service returns only
 its own.
+
+### Signing in
+
+> **Not authentication.** Seeded accounts, one shared demo password, tokens in
+> a dict until the process restarts. No hashing, no expiry, no sessions table.
+> It exists so the sign-in page has a real 401 to render and the product can
+> tell you who you are. Replace it wholesale before anything real.
+
+| Email | Password |
+| --- | --- |
+| `sanshat@zeroto10.ai` | `allya` (override with `DEMO_PASSWORD`) |
+| `demo@zeroto10.ai` | same |
+
+Any other email, or the wrong password, returns 401 with a single message for
+both cases — never reveal which half was wrong. The product is **not gated**:
+`/` works signed out, and the topbar offers a way in.
 
 ## Files
 

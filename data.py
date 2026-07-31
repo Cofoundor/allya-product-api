@@ -9,6 +9,7 @@ Mili's 28 tasks, ₹2,000/mo first month free); humans are referred to
 generically — "your brand expert" — never by an invented name.
 """
 
+import os
 import time
 
 DAY = 86400
@@ -890,3 +891,70 @@ OUTCOMES: dict[str, dict] = {
 
 UNDO_REPLY = "Pulled it back — nothing went out. It’s in your queue again; no harm done."
 REVISION_REPLY = "Tell me what’s off and I’ll have a new pass in your panel within the hour. Nothing moves in the meantime."
+
+
+# ---- the gate ----------------------------------------------------------
+#
+# Dummy sign-in: a couple of seeded accounts and one shared demo password
+# (override with DEMO_PASSWORD). Anything else is a 401, which is what drives
+# the error state the sign-in design was built around. No hashing, no
+# sessions table, no expiry — tokens live in a dict until the process restarts.
+
+DEMO_PASSWORD = os.getenv("DEMO_PASSWORD", "allya")
+
+USERS: dict[str, dict] = {
+    "sanshat@zeroto10.ai": {
+        "id": "u_founder",
+        "email": "sanshat@zeroto10.ai",
+        "name": "Sanshat Bhatia",
+        "company": "ZeroTo10",
+    },
+    "demo@zeroto10.ai": {
+        "id": "u_demo",
+        "email": "demo@zeroto10.ai",
+        "name": "Demo founder",
+        "company": "ZeroTo10",
+    },
+}
+
+# token -> user id, for as long as the process lives
+TOKENS: dict[str, str] = {}
+
+# The graph behind the gate: not the workspace brain (departments and live
+# work) but the company as an outsider meets it.
+GATE_BRAIN_NODES = [
+    _node("co", "ZeroTo10", 0, "core"),
+    _node("product", "Product", 1, "product", "co"),
+    *[_node(f"p{i}", lbl, 2, "product", "product")
+      for i, lbl in enumerate(["Allya", "Agents", "Experts", "Onboarding"], 1)],
+    _node("market", "Market", 1, "market", "co"),
+    *[_node(f"m{i}", lbl, 2, "market", "market")
+      for i, lbl in enumerate(["Who it is for", "Market size", "Competition"], 1)],
+    _node("traction", "Traction", 1, "traction", "co"),
+    *[_node(f"t{i}", lbl, 2, "traction", "traction")
+      for i, lbl in enumerate(["Stage", "Proof", "Roadmap"], 1)],
+    _node("model", "Model", 1, "model", "co"),
+    *[_node(f"o{i}", lbl, 2, "model", "model")
+      for i, lbl in enumerate(["Pricing", "Unit economics", "Go-to-market"], 1)],
+    _node("team", "Team", 1, "team", "co"),
+    *[_node(f"e{i}", lbl, 2, "team", "team")
+      for i, lbl in enumerate(["Founders", "Origin"], 1)],
+]
+
+# three strands that skip the hub, so it reads as a business and not a filing
+# cabinet: what you sell prices itself, what you've proven is what the market
+# rewarded, and the model is what the traction pays for
+GATE = {
+    "headline": "Welcome back to ZeroTo10.",
+    "lede": "Sign in and Allya picks up where you left off — the work in flight, the decisions waiting on you, the whole company map.",
+    "footnote": "We’re currently rolling out ZeroTo10.ai to selected users. If you’d like an account, please apply on",
+    "footnote_link_label": "this link",
+    "footnote_link_href": "https://www.linkedin.com/in/sanshat-bhatia",
+    "brain": {
+        "surface_id": "gate",
+        "layout": "cluster",
+        "anchor_id": "co",
+        "nodes": GATE_BRAIN_NODES,
+        "links": [("product", "model"), ("market", "traction"), ("model", "traction")],
+    },
+}

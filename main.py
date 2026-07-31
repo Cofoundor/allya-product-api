@@ -8,8 +8,10 @@ frontend should not need to change.
 """
 
 import os
+import secrets
+from typing import Annotated, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 import data
@@ -201,6 +203,46 @@ def patch_fact(fid: str, body: m.FactPatch):
     if body.text is not None:
         f.update({"text": body.text, "flagged": False, "mismatch": False, "source": "corrected"})
     return m.Fact(**f)
+
+
+# ---- the gate ----------------------------------------------------------
+
+def _bearer(authorization: Optional[str]) -> dict:
+    """The signed-in user, or 401. No expiry, no refresh — a dummy session."""
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    email = data.TOKENS.get(token)
+    if not email:
+        raise HTTPException(401, "Not signed in")
+    return data.USERS[email]
+
+
+@app.get(f"{V1}/gate", response_model=m.Gate)
+def get_gate():
+    """Everything the sign-in page renders, graph included."""
+    return m.Gate(**data.GATE)
+
+
+@app.post(f"{V1}/session", response_model=m.Session, status_code=201)
+def sign_in(body: m.Credentials):
+    user = data.USERS.get(body.email.strip().lower())
+    if not user or body.password != data.DEMO_PASSWORD:
+        # one message for both cases — never reveal which half was wrong
+        raise HTTPException(401, "That email and password don’t match an account.")
+    token = secrets.token_urlsafe(24)
+    data.TOKENS[token] = user["email"]
+    return m.Session(token=token, user=user)
+
+
+@app.get(f"{V1}/session", response_model=m.User)
+def whoami(authorization: Annotated[Optional[str], Header()] = None):
+    return m.User(**_bearer(authorization))
+
+
+@app.delete(f"{V1}/session", status_code=204)
+def sign_out(authorization: Annotated[Optional[str], Header()] = None):
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    data.TOKENS.pop(token, None)  # signing out twice is not an error
+    return Response(status_code=204)
 
 
 @app.get("/healthz")

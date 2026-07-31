@@ -78,7 +78,8 @@ class BrainNode(Base):
 
 class BrainGraph(Base):
     surface_id: str
-    layout: Literal["web", "spray"]
+    # 'cluster' fans leaves around their own parent — the gate's graph
+    layout: Literal["web", "spray", "cluster"]
     # the node the layout is built around ("co" on the workspace)
     anchor_id: str
     nodes: list[BrainNode]
@@ -217,3 +218,35 @@ class WorkAction(Base):
     item: WorkItem
     toast: str
     reply: Reply
+
+
+# ---- the gate ----------------------------------------------------------
+
+class Credentials(Base):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class User(Base):
+    id: str
+    email: str
+    name: str
+    company: str
+
+
+class Session(Base):
+    token: str
+    user: User
+
+
+class Gate(Base):
+    """Everything the sign-in page renders — including the graph that drifts
+    behind it, which is the company as an outsider meets it rather than the
+    workspace brain."""
+
+    headline: str
+    lede: str
+    footnote: str
+    footnote_link_label: str
+    footnote_link_href: str
+    brain: BrainGraph
