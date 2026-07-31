@@ -16,7 +16,34 @@ Docs at http://localhost:8000/docs. The frontend expects
 `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`.
 
 CORS allows `http://localhost:4322` (the Next dev server); override with
-`ALLOWED_ORIGINS` (comma-separated).
+`ALLOWED_ORIGINS` (comma-separated, no trailing slash).
+
+> `--reload` has been seen to log "detected changes… Reloading" and carry on
+> serving the old module. If an edit to `data.py` doesn't show up, restart the
+> process rather than trusting the reloader.
+
+## Deploy
+
+`render.yaml` is a ready blueprint (Render → New → Blueprint → this repo).
+Any host works — it only needs to bind `$PORT`:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+Two things must line up or the browser gets a CORS error and the frontend
+shows its offline state everywhere:
+
+| Where | Variable | Value |
+| --- | --- | --- |
+| this service | `ALLOWED_ORIGINS` | the frontend's origin, e.g. `https://allyafn.netlify.app` |
+| the frontend | `NEXT_PUBLIC_API_URL` | this service's origin **+ `/api/v1`** |
+
+`NEXT_PUBLIC_*` is baked into the client bundle at build time, so changing it
+needs a redeploy of the frontend, not just a restart.
+
+**State resets on every restart, and free tiers sleep.** That's fine for a
+contract stand-in; it is not a production backend.
 
 ## Contract
 

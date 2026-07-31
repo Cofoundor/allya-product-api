@@ -1,0 +1,17 @@
+# Render blueprint — the quickest free home for this service.
+# In Render: New → Blueprint → pick the allya-product-api repo.
+#
+# Any host works; it only needs to run the start command below and bind $PORT.
+services:
+  - type: web
+    name: allya-product-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      # the browser calls this API directly, so the Netlify origin has to be
+      # allowed by name. Comma-separated; no trailing slash.
+      - key: ALLOWED_ORIGINS
+        value: https://allyafn.netlify.app
