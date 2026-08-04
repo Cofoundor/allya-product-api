@@ -7,6 +7,8 @@ frontend should not need to change.
     uvicorn main:app --reload --port 8000
 """
 
+import calendar as pycal
+import datetime
 import os
 import secrets
 from typing import Annotated, Optional
@@ -54,6 +56,18 @@ def _fact(fid: str) -> dict:
 
 def _reply(text: str, mid: str) -> m.Reply:
     return m.Reply(messages=[m.Message(id=mid, speaker="allya", text=text)])
+
+
+def _events(sid: str) -> list[dict]:
+    """The workspace's calendar is every floor's; a floor sees only its own."""
+    return data.CALENDAR if sid == "workspace" else [e for e in data.CALENDAR if e["surface_id"] == sid]
+
+
+def _needs_you(ev: dict) -> bool:
+    """An entry is yours to decide only while the work behind it still is —
+    approve the item and the accent dot leaves the grid with it."""
+    wid = ev.get("work_id")
+    return bool(wid) and any(w["id"] == wid and w["status"] == "needs-you" for w in data.WORK)
 
 
 # ---- surfaces ----------------------------------------------------------
@@ -118,6 +132,76 @@ def get_schedule(sid: str):
     return m.Schedule(entries=data.SCHEDULES.get(sid, []))
 
 
+@app.get(f"{V1}/surfaces/{{sid}}/calendar", response_model=m.CalendarMonth)
+def get_calendar(
+    sid: str,
+    month: str | None = Query(None, description="YYYY-MM; defaults to the current month"),
+):
+    """One month of the grid. Only the days that hold something come back —
+    the client already knows how to draw the empty ones."""
+    _surface(sid)
+    today = datetime.date.today()
+    if month:
+        try:
+            first = datetime.date.fromisoformat(f"{month}-01")
+        except ValueError:
+            raise HTTPException(422, "month must be YYYY-MM")
+    else:
+        first = today.replace(day=1)
+    prefix = first.strftime("%Y-%m")
+
+    buckets: dict[str, list[dict]] = {}
+    for e in _events(sid):
+        if e["date"].startswith(prefix):
+            buckets.setdefault(e["date"], []).append(e)
+
+    days = [
+        m.CalendarDay(
+            date=d,
+            count=len(evs),
+            needs_you=sum(1 for e in evs if _needs_you(e)),
+            kinds=sorted({e["kind"] for e in evs}),
+        )
+        for d, evs in sorted(buckets.items())
+    ]
+
+    if today.strftime("%Y-%m") == prefix:
+        selected = today.isoformat()
+    elif days:
+        selected = days[0].date
+    else:
+        selected = first.isoformat()
+
+    return m.CalendarMonth(
+        surface_id=sid,
+        month=prefix,
+        label=first.strftime("%B %Y"),
+        today=today.isoformat(),
+        first_weekday=first.weekday(),
+        days_in_month=pycal.monthrange(first.year, first.month)[1],
+        days=days,
+        selected=selected,
+    )
+
+
+@app.get(f"{V1}/surfaces/{{sid}}/calendar/{{date}}", response_model=m.DayAgenda)
+def get_calendar_day(sid: str, date: str):
+    """Everything on one day, all-day entries first, then by clock."""
+    _surface(sid)
+    try:
+        d = datetime.date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+    events = sorted((e for e in _events(sid) if e["date"] == date), key=lambda e: e["start_minute"])
+    return m.DayAgenda(
+        surface_id=sid,
+        date=date,
+        label=f"{d.strftime('%A')} {d.day} {d.strftime('%B')}",
+        events=events,
+        note=None if events else data.EMPTY_DAY,
+    )
+
+
 @app.get(f"{V1}/surfaces/{{sid}}/knowledge", response_model=m.FactList)
 def get_knowledge(
     sid: str,
@@ -127,8 +211,6 @@ def get_knowledge(
     _surface(sid)
     facts = [f for f in data.FACTS if f["surface_id"] == sid and not f.get("removed")]
     if date:
-        import datetime
-
         try:
             d = datetime.date.fromisoformat(date)
         except ValueError:
@@ -191,6 +273,22 @@ def complete_service_onboarding(sid: str, body: m.AnswersIn):
         status="complete",
         learned=[q["learned"] for q in spec["questions"]],
     )
+
+
+@app.get(f"{V1}/surfaces/{{sid}}/instrument", response_model=m.Instrument)
+def get_instrument(sid: str):
+    """The floor's own geometry — where a thing sits is the information."""
+    _surface(sid)
+    inst = data.INSTRUMENTS.get(sid)
+    if not inst:
+        raise HTTPException(404, f"'{sid}' has no instrument")
+    return m.Instrument(surface_id=sid, **inst)
+
+
+@app.get(f"{V1}/directions/email", response_model=m.EmailPage)
+def get_email_direction():
+    """One job inside marketing, at the depth a founder works at."""
+    return m.EmailPage(**data.EMAIL_PAGE)
 
 
 # ---- work actions ------------------------------------------------------

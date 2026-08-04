@@ -227,6 +227,69 @@ class Schedule(Base):
     entries: list[ScheduleEntry]
 
 
+# ---- calendar ----------------------------------------------------------
+#
+# The schedule above is "what's on", said in prose. The calendar is the same
+# company on a grid: dated, navigable a month at a time, and joined back to
+# work — an entry that carries a work_id opens that item's approval sheet.
+
+CalendarKind = Literal["meeting", "ship", "review", "deadline", "focus"]
+
+
+class CalendarEvent(Base):
+    id: str
+    surface_id: str
+    # YYYY-MM-DD, always — the client never parses a display string
+    date: str
+    # how the time reads: "11:00", or "All day"
+    when: str
+    # minutes past midnight; -1 means all-day, and sorts first
+    start_minute: int = -1
+    duration_min: int = 0
+    what: str
+    kind: CalendarKind
+    origin: Origin = "agent"
+    pill: Optional[str] = None
+    # the work item this sits on, when there is one
+    work_id: Optional[str] = None
+
+
+class CalendarDay(Base):
+    """One dot-carrying cell in the month grid."""
+
+    date: str
+    count: int
+    # of those, how many are yours to decide — the accent dots
+    needs_you: int
+    kinds: list[CalendarKind] = []
+
+
+class CalendarMonth(Base):
+    surface_id: str
+    # YYYY-MM
+    month: str
+    # "August 2026"
+    label: str
+    today: str
+    # weekday the 1st falls on, Monday = 0, so the client doesn't guess
+    first_weekday: int
+    days_in_month: int
+    # only the days that hold something
+    days: list[CalendarDay]
+    # the day to open on: today when it's in this month, else the first busy one
+    selected: str
+
+
+class DayAgenda(Base):
+    surface_id: str
+    date: str
+    # "Tuesday 4 August"
+    label: str
+    events: list[CalendarEvent]
+    # what to say when the day is empty
+    note: Optional[str] = None
+
+
 # ---- action envelopes --------------------------------------------------
 
 class WorkAction(Base):
@@ -290,6 +353,94 @@ class OnboardingResult(Base):
     surface_id: str
     status: Literal["complete"]
     learned: list[str]
+
+
+# ---- the instrument (design mock) --------------------------------------
+
+class InstrumentItem(Base):
+    """One thing on a floor's instrument. `at`, `lane` and `value` are the
+    encoding — what they mean depends on the instrument's type:
+
+    timeline  at = -1 shipped … 0 today … +1 scheduled, lane = channel
+    funnel    at = stage index, value = how many
+    ladder    at = stage index, lane = role, value = how many
+    radar     at = 0 spoke today … 1 gone cold, value = reach
+    mass      value = money a month, state 'idle' when nobody opens it
+    """
+
+    id: str
+    label: str
+    at: float = 0.0
+    lane: int = 0
+    value: float = 0.0
+    state: str = ""
+    meta: str = ""
+
+
+class Instrument(Base):
+    surface_id: str
+    type: Literal["timeline", "funnel", "ladder", "radar", "mass"]
+    title: str
+    # what the geometry means, said plainly under the canvas
+    caption: str
+    lanes: list[str] = []
+    unit: str = ""
+    items: list[InstrumentItem]
+
+
+# ---- a direction page (design mock) ------------------------------------
+#
+# A floor is a service; a direction is one job inside it. These are shaped
+# per direction on purpose — email marketing has sends and sequences, and
+# pretending otherwise is what makes a page generic and useless.
+
+class Stat(Base):
+    id: str
+    value: str
+    label: str
+    delta: Optional[str] = None
+
+
+class Progress(Base):
+    label: str
+    value: int
+    of: int
+    note: str
+
+
+class Send(Base):
+    id: str
+    subject: str
+    when: str
+    audience: str
+    sent: int
+    open_rate: float
+    replies: int
+    state: Literal["sent", "scheduled", "draft"] = "sent"
+
+
+class Sequence(Base):
+    id: str
+    name: str
+    trigger: str
+    state: Literal["live", "off", "draft"]
+    audience: str
+    stat: str
+
+
+class EmailPage(Base):
+    id: str
+    surface_id: str
+    label: str
+    blurb: str
+    stats: list[Stat]
+    # the warm-up, or whatever long-running thing is mid-flight
+    progress: Optional[Progress] = None
+    # the one thing waiting on you, by work id
+    awaiting: Optional[str] = None
+    sends: list[Send]
+    sequences: list[Sequence]
+    notes: list[str]
 
 
 # ---- the gate ----------------------------------------------------------

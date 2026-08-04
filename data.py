@@ -9,6 +9,7 @@ Mili's 28 tasks, ₹2,000/mo first month free); humans are referred to
 generically — "your brand expert" — never by an invented name.
 """
 
+import datetime
 import os
 import time
 
@@ -848,6 +849,81 @@ SCHEDULES: dict[str, list[dict]] = {
 }
 
 
+# ---- calendar ----------------------------------------------------------
+#
+# Dated twins of the schedule above. Offsets are relative to today so the
+# month always has something in it whenever this runs; the ones that mirror a
+# work item carry its id, which is what makes a cell openable.
+
+TODAY = datetime.date.today()
+
+
+def _ce(eid, sid, off, when, minute, what, kind, origin="agent", pill=None, work=None, dur=0):
+    return {
+        "id": eid,
+        "surface_id": sid,
+        "date": (TODAY + datetime.timedelta(days=off)).isoformat(),
+        "when": when,
+        "start_minute": minute,
+        "duration_min": dur,
+        "what": what,
+        "kind": kind,
+        "origin": origin,
+        "pill": pill,
+        "work_id": work,
+    }
+
+
+CALENDAR: list[dict] = [
+    # the company's own — not owned by any one floor
+    _ce("c-runway", "workspace", -6, "09:30", 570, "Runway review — 11 months at current burn", "meeting", dur=45),
+    _ce("c-retro", "workspace", -8, "09:00", 540, "Launch-week retro", "meeting", dur=60),
+    _ce("c-invest", "workspace", 0, "11:00", 660, "Investor call — Meridian", "meeting", pill="notes ready", dur=45),
+    _ce("c-ops", "workspace", 0, "15:00", 900, "Ops interview — first of two", "meeting", pill="brief ready", dur=45),
+    _ce("c-allhands", "workspace", 3, "16:30", 990, "All-hands — the pivot, said once", "meeting", dur=30),
+    _ce("c-board", "workspace", 9, "10:00", 600, "Board update goes out", "ship", pill="drafted"),
+
+    _ce("cm-li", "marketing", 0, "07:05", 425, "LinkedIn post shipped — the pivot lesson", "ship", work="linkedin"),
+    _ce("cm-ret", "marketing", 0, "06:20", 380, "Retargeting audience rebuilt", "ship", work="retarget"),
+    _ce("cm-news", "marketing", 1, "09:00", 540, "Newsletter — the SurferSearcher angle", "ship",
+        "expert", "waiting on you", "newsletter"),
+    _ce("cm-reel", "marketing", 2, "08:00", 480, "Reel #1 — the day-one story", "ship",
+        "expert", "needs a pick", "reel"),
+    _ce("cm-shorts", "marketing", 2, "14:00", 840, "6 shorts land for review", "review", work="shorts"),
+    _ce("cm-hero", "marketing", 4, "11:30", 690, "Landing hero — final pass with your brand expert", "review",
+        "expert", None, "hero", 60),
+    _ce("cm-warm", "marketing", 10, "All day", -1, "Warm-up finishes — 200 addresses", "ship", work="warmup"),
+
+    _ce("ch-jd", "hiring", 0, "07:15", 435, "Ops-hire JD posted to three boards", "ship", work="jd-posted"),
+    _ce("ch-int1", "hiring", 3, "15:00", 900, "Ops interview — candidate one", "meeting",
+        "expert", "held", "shortlist", 45),
+    _ce("ch-int2", "hiring", 3, "16:00", 960, "Ops interview — candidate two", "meeting",
+        "expert", "held", "shortlist", 45),
+    _ce("ch-dec", "hiring", 4, "12:00", 720, "Decision on the shortlist", "deadline", pill="your call"),
+
+    _ce("cp-tc", "pr", 0, "06:50", 410, "TechCrunch follow-up sent", "ship", work="coverage"),
+    _ce("cp-warm", "pr", 1, "10:00", 600, "Warm-up replies go out to tier 1", "ship",
+        "expert", "waiting on you", "presslist"),
+    _ce("cp-pitch", "pr", 3, "11:00", 660, "Pivot-story pitch — 3 reporters", "meeting",
+        "expert", None, "pitch", 30),
+    _ce("cp-embargo", "pr", 8, "All day", -1, "Embargo lifts on the funding note", "deadline"),
+
+    _ce("cs-win", "sales", 0, "06:05", 365, "Win-back note sent to 12 churned users", "ship", work="winback"),
+    _ce("cs-calls", "sales", 1, "13:00", 780, "7 warm calls — openers drafted", "meeting",
+        "agent", "waiting on you", "leads", 90),
+    _ce("cs-crm", "sales", 2, "All day", -1, "CRM cleanup writes back", "ship", work="crm"),
+    _ce("cs-pipe", "sales", 7, "09:30", 570, "Pipeline review — the 7 worth a call", "meeting", dur=30),
+
+    _ce("co-runway", "ops", 0, "05:40", 340, "Runway recalculated — 11 months", "ship", work="runway"),
+    _ce("co-host", "ops", 2, "All day", -1, "Hosting audit lands", "review", work="hosting"),
+    _ce("co-price", "ops", 3, "All day", -1, "Pricing memo goes into the handbook", "ship",
+        "expert", "draft ready", "pricing-memo"),
+    _ce("co-focus", "ops", 4, "All day", -1, "Deep work — no meetings", "focus", pill="protected"),
+]
+
+EMPTY_DAY = "Nothing on this day. I’ll keep it that way unless you tell me otherwise."
+
+
 # ---- what approving / undoing an item says -----------------------------
 
 OUTCOMES: dict[str, dict] = {
@@ -1124,6 +1200,151 @@ LOCKS: dict[str, dict] = {
         "cta": f"Set up {_name(s)}",
     }
     for s in SERVICE_IDS
+}
+
+
+# ---- the instrument (design mock) --------------------------------------
+#
+# Each floor gets a geometry that MEANS something, rather than a graph that
+# just looks busy: where a thing sits is the information. Same payload shape
+# for all five; the type says how to read `at`, `lane` and `value`.
+
+def _i(iid, label, meta, at=0.0, lane=0, value=0.0, state=""):
+    return {"id": iid, "label": label, "meta": meta, "at": at, "lane": lane,
+            "value": value, "state": state}
+
+
+INSTRUMENTS: dict[str, dict] = {
+    "marketing": {
+        "type": "timeline", "title": "The week",
+        "caption": "Left is out the door, right is still coming. Height is the channel.",
+        "lanes": ["LinkedIn", "Email", "Video", "Site"],
+        "items": [
+            _i("linkedin", "The pivot lesson", "shipped 7:05am · 1.4k views", -0.72, 0, 3, "shipped"),
+            _i("retarget", "Pricing-page retargeting", "shipped 6:20am · 1,900 people", -0.48, 3, 2, "shipped"),
+            _i("warmup", "Warming 200 addresses", "day 4 of 14 · 0 bounces", 0.08, 1, 2, "running"),
+            _i("shorts", "Six shorts from the demo", "4 rendered, captions next", 0.18, 2, 2, "running"),
+            _i("hero", "Landing hero, 5 variants", "brand expert on the final pass", 0.34, 3, 2, "running"),
+            _i("newsletter", "Next week’s newsletter", "waiting on you · Tuesday 9am", 0.5, 1, 4, "needs-you"),
+            _i("reel", "Reel: the day-one story", "waiting on you · Wednesday", 0.62, 2, 4, "needs-you"),
+            _i("memo", "Pricing memo goes public", "drafted · Thursday", 0.8, 3, 2, "scheduled"),
+            _i("thread", "13 campaigns, month one", "queued · Friday", 0.92, 0, 2, "scheduled"),
+        ],
+    },
+    "sales": {
+        "type": "funnel", "title": "The funnel",
+        "caption": "Each band is a stage. The size of a dot is how many people are in it.",
+        "lanes": ["Signed up", "In conversation", "Worth a call", "Paying"],
+        "unit": "people",
+        "items": [
+            _i("signups", "Last week’s signups", "40 enriched overnight", 0, 0, 40, "running"),
+            _i("cold", "Never opened anything", "18 · leave them alone for now", 0, 0, 18, "idle"),
+            _i("talking", "Mid-conversation", "6 · answered the first email", 1, 0, 6, "running"),
+            _i("leads", "Worth a call this week", "7 · openers drafted, waiting on you", 2, 0, 7, "needs-you"),
+            _i("agency", "Tried an agency, bounced off price", "3 · closest to SurferSearcher", 2, 0, 3, "needs-you"),
+            _i("won", "Paying", "2 closed this month · ₹2,000 each", 3, 0, 2, "shipped"),
+        ],
+    },
+    "hiring": {
+        "type": "ladder", "title": "The ladder",
+        "caption": "One column per role. Rungs are stages — the top rung is your call.",
+        "lanes": ["Ops", "Design", "Engineering"],
+        "unit": "people",
+        "items": [
+            _i("ops-app", "Applied", "6 in 4 hours · above average", 0, 0, 6, "running"),
+            _i("ops-screen", "Through the screen", "2 the agent ranked against your JD", 1, 0, 2, "running"),
+            _i("ops-you", "Your call", "Thursday 3pm and 4pm are held", 2, 0, 2, "needs-you"),
+            _i("des-app", "Applied", "not posted yet", 0, 1, 0, "idle"),
+            _i("des-brief", "Brief half-written", "you said designer first", 1, 1, 1, "idle"),
+            _i("eng-app", "Applied", "not started — deliberately", 0, 2, 0, "idle"),
+        ],
+    },
+    "pr": {
+        "type": "radar", "title": "Who’s warm",
+        "caption": "The middle is someone you spoke to this week. The edge is someone going cold.",
+        "unit": "days since contact",
+        "items": [
+            _i("tc", "TechCrunch — follow-up sent", "2 days ago · no reply yet, that’s normal", 0.18, 0, 3, "running"),
+            _i("r1", "Replied to your last note", "5 days ago · warmest thing you have", 0.26, 0, 3, "shipped"),
+            _i("r2", "Read it, didn’t reply", "11 days ago", 0.44, 0, 2, "running"),
+            _i("r3", "Covers founder tooling monthly", "3 weeks ago · worth a personal note", 0.62, 0, 3, "needs-you"),
+            _i("r4", "Asked for the deck once", "6 weeks ago", 0.74, 0, 2, "idle"),
+            _i("r5", "Nine on the list have gone quiet", "6 months · your PR expert cut them", 0.94, 0, 2, "idle"),
+            _i("r6", "New: writes about AI adoption", "never contacted", 0.86, 0, 2, "idle"),
+        ],
+    },
+    "ops": {
+        "type": "mass", "title": "Where it goes",
+        "caption": "Every circle is money out each month. The faint ones nobody has opened.",
+        "unit": "₹ a month",
+        "items": [
+            _i("people", "Two contractors", "₹45,000 · the biggest thing you buy", 0, 0, 45000, "active"),
+            _i("hosting", "Hosting, four providers", "₹6,400 · no traffic in 30 days", 0, 0, 6400, "idle"),
+            _i("tools", "Design and docs tools", "₹3,200", 0, 0, 3200, "active"),
+            _i("analytics", "Two analytics tools", "₹1,800 · you use one", 0, 0, 1800, "idle"),
+            _i("crm", "A CRM seat", "₹900 · belongs to someone who left", 0, 0, 900, "idle"),
+            _i("domains", "Domains and email", "₹400", 0, 0, 400, "active"),
+        ],
+    },
+}
+
+
+# ---- the email direction page (design mock) ----------------------------
+#
+# One job inside marketing, at the depth a founder actually works: the list,
+# what went out and what it did, and the things that run without you.
+
+EMAIL_PAGE = {
+    "id": "email",
+    "surface_id": "marketing",
+    "label": "Email",
+    "blurb": "The channel you own. Nobody can throttle it, so it has to be worth opening.",
+    "stats": [
+        {"id": "list", "value": "412", "label": "on the list", "delta": "+38 this month"},
+        {"id": "open", "value": "41%", "label": "opened the last one", "delta": "+7 vs the one before"},
+        {"id": "reply", "value": "11", "label": "replied", "delta": "3 became calls"},
+        {"id": "unsub", "value": "2", "label": "left", "delta": None},
+    ],
+    "progress": {
+        "label": "Warming 200 cold addresses",
+        "value": 4,
+        "of": 14,
+        "note": "0 bounces so far · nothing sends to them until day 14",
+    },
+    "awaiting": "newsletter",
+    "sends": [
+        {"id": "s-next", "subject": "The agency did 13 campaigns. In one month.",
+         "when": "Tuesday 9am", "audience": "Everyone", "sent": 0, "open_rate": 0, "replies": 0,
+         "state": "scheduled"},
+        {"id": "s1", "subject": "You didn’t start a company to write newsletters at 11pm",
+         "when": "last Tuesday", "audience": "Everyone", "sent": 374, "open_rate": 0.41, "replies": 11,
+         "state": "sent"},
+        {"id": "s2", "subject": "What ₹2,000 a month actually buys you",
+         "when": "2 weeks ago", "audience": "Everyone", "sent": 351, "open_rate": 0.34, "replies": 4,
+         "state": "sent"},
+        {"id": "s3", "subject": "Introducing our AI-powered operations platform",
+         "when": "3 weeks ago", "audience": "Everyone", "sent": 340, "open_rate": 0.23, "replies": 0,
+         "state": "sent"},
+        {"id": "s4", "subject": "28 tasks in 30 days — how Mili did it",
+         "when": "a month ago", "audience": "Everyone", "sent": 318, "open_rate": 0.39, "replies": 7,
+         "state": "sent"},
+    ],
+    "sequences": [
+        {"id": "welcome", "name": "Welcome", "trigger": "on signup", "state": "live",
+         "audience": "38 this month", "stat": "62% open · 5 replies"},
+        {"id": "day3", "name": "Day-3 nudge", "trigger": "3 days after signup, if quiet", "state": "live",
+         "audience": "22 this month", "stat": "31% open · 1 reply — too polite"},
+        {"id": "winback", "name": "Win-back", "trigger": "60 days quiet", "state": "draft",
+         "audience": "40 would qualify", "stat": "waiting on your approval"},
+        {"id": "ps", "name": "One-reply P.S.", "trigger": "every send", "state": "live",
+         "audience": "every send", "stat": "most of your replies start here"},
+    ],
+    "notes": [
+        "Story-format sends open 18% better than product-format ones.",
+        "The one that led with “AI-powered platform” is your worst send ever — 23%.",
+        "Replies come from the P.S., not the body. Keep asking for one word.",
+        "Sends before 9am get read; sends after 4pm don’t.",
+    ],
 }
 
 
