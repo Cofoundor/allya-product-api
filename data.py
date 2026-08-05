@@ -316,6 +316,11 @@ STUB_BRANCHES = {
             ("pr_reuse", "Turn coverage into a post"),
             ("pr_release", "Nobody reads a press release"),
         ]),
+        ("newsletters", "Newsletters", "Newsletters", [
+            ("nl_next", "The note that's waiting on the list"),
+            ("nl_replies", "Every piece came from a reply"),
+            ("nl_8am", "Reporters open you at 8am"),
+        ]),
     ],
     "sales": [
         ("sa_pipe", "Pipeline", "Pipeline", [
@@ -1330,7 +1335,8 @@ EMAIL_PAGE = {
              "We ran 13 in the first month. Not because anyone worked harder — because nobody had to wait for anybody.",
          ],
          "ps": "P.S. — reply with one word if you want the breakdown.",
-         "outcome": "goes Tuesday 9am · holds 10 min after you approve"},
+         "outcome": "your PR expert's edits are in — read it before it ships",
+         "work_id": "newsletter"},
         {"id": "s1", "subject": "You didn’t start a company to write newsletters at 11pm",
          "when": "last Tuesday", "audience": "Everyone", "sent": 374, "open_rate": 0.41, "replies": 11,
          "state": "sent",
@@ -1392,6 +1398,8 @@ EMAIL_PAGE = {
     },
     "ui": {
         "tint": "b4",
+        "floor_label": "Marketing",
+        "floor_href": "/marketing",
         "placeholder": "Direct Allya — what should this one say?",
         "suggestions": [
             "Write next week’s newsletter",
@@ -1526,6 +1534,8 @@ WHATSAPP_PAGE = {
     },
     "ui": {
         "tint": "b1",
+        "floor_label": "Marketing",
+        "floor_href": "/marketing",
         "placeholder": "Direct Allya — what should this broadcast say?",
         "suggestions": [
             "Write the festive offer",
@@ -1866,16 +1876,35 @@ def campaign_detail(page: dict, row: dict) -> dict:
              "delta": _pct(f.get("clicked", 0) / n) + " of delivered" if n else None},
             {"id": "replied", "value": str(row["replies"]), "label": "replied",
              "delta": _pct(row["replies"] / n) + " of delivered" if n else None},
+            # each channel already names this its own way in its stats
             {"id": "left", "value": str(f.get("left", 0)),
-             "label": "blocked or opted out" if wa else "unsubscribed", "delta": None},
+             "label": next((x["label"] for x in page["stats"] if x["id"] == "unsub"), "left"),
+             "delta": None},
             {"id": "window", "value": row["when"], "label": "went out", "delta": row["audience"]},
         ]
     else:
+        # nothing has happened to it yet, so the readings are what it's
+        # aimed at and what this channel usually does — their own numbers,
+        # which is the only honest benchmark for one that hasn't gone out
+        done = [c for c in page["campaigns"] if c["state"] == "sent"]
+        last = done[0] if done else None
+        best = max(done, key=lambda c: c["open_rate"], default=None)
+        listed = _stat(page, "list")
+        list_label = next((s["label"] for s in page["stats"] if s["id"] == "list"), "on the list")
         kpis = [
-            {"id": "audience", "value": row["audience"], "label": "goes to", "delta": None},
-            {"id": "when", "value": row["when"], "label": "goes", "delta": "holds 10 min after you approve"},
-            {"id": "state", "value": row["state"], "label": "where it is",
-             "delta": row.get("outcome")},
+            {"id": "reach", "value": listed or "—", "label": list_label,
+             "delta": f"this one goes to {row['audience'].lower()}"},
+            {"id": "when", "value": row["when"], "label": "goes",
+             "delta": "holds 10 min after you approve"},
+            # the outcome is already the line under the tiles — saying it
+            # twice in one screen is worse than saying it once
+            {"id": "state", "value": row["state"], "label": "where it is", "delta": None},
+            {"id": "words", "value": str(sum(len(p.split()) for p in row.get("body", []))),
+             "label": "words", "delta": f"{len(row.get('body', []))} paragraphs"},
+            {"id": "last", "value": _pct(last["open_rate"]) if last else "—",
+             "label": f"your last one {nouns['metric']}", "delta": last["subject"] if last else None},
+            {"id": "best", "value": _pct(best["open_rate"]) if best else "—",
+             "label": f"best you've {nouns['metric']}", "delta": best["subject"] if best else None},
         ]
 
     dates = [d for d in (
@@ -1885,3 +1914,137 @@ def campaign_detail(page: dict, row: dict) -> dict:
     ) if d["value"]]
 
     return {**row, "kpis": kpis, "dates": dates}
+
+
+# A third channel, on a different floor. The press newsletter is not
+# marketing email with a different list: nobody opts in, every name is a
+# person with a beat, and the thing you're measuring is whether a reporter
+# replies — not whether a cohort converts.
+
+NEWSLETTERS_PAGE = {
+    "id": "newsletters",
+    "surface_id": "pr",
+    "label": "Newsletters",
+    "blurb": "The note that goes to people who write for a living. They owe you nothing, so it has to be worth their four minutes.",
+    "stats": [
+        {"id": "list", "value": "84", "label": "on the press list", "delta": "+6 this month"},
+        {"id": "open", "value": "52%", "label": "opened the last one", "delta": "+4 vs the one before"},
+        {"id": "reply", "value": "7", "label": "replied", "delta": "2 asked for more"},
+        {"id": "unsub", "value": "3", "label": "asked to be dropped", "delta": None},
+        {"id": "clicks", "value": "24%", "label": "clicked the proof", "delta": "+9 vs the one before"},
+        {"id": "coverage", "value": "2", "label": "pieces this quarter", "delta": "both from replies"},
+    ],
+    "progress": {
+        "label": "Warming 12 reporters before the next pitch",
+        "value": 5,
+        "of": 12,
+        "note": "one reply each · nothing is pitched until they've heard from you twice",
+    },
+    "awaiting": "presslist",
+    "campaigns": [
+        {"id": "n-next", "subject": "What changed since the last note",
+         "when": "Thursday 8am", "audience": "Press list · everyone", "sent": 0, "open_rate": 0, "replies": 0,
+         "state": "draft",
+         "body": [
+             "Two things moved since I last wrote: 13 campaigns shipped in a month, and the first month is now free.",
+             "No ask. If either is useful for something you're writing, the numbers are attached.",
+         ],
+         "ps": "P.S. — reply STOP and I'll take you off this, no hard feelings.",
+         "outcome": "waiting on the refreshed press list",
+         "work_id": "presslist"},
+        {"id": "n1", "subject": "13 campaigns in one month, and what broke",
+         "when": "3 weeks ago", "audience": "Press list · everyone", "sent": 78, "open_rate": 0.52, "replies": 7,
+         "state": "sent",
+         "body": [
+             "An agency quoted ₹80,000 a month and two weeks per campaign. We ran 13 in the first month.",
+             "The part nobody writes about: two of them were bad, and one went out with the wrong subject line.",
+         ],
+         "ps": "P.S. — happy to walk anyone through the numbers, on or off record.",
+         "outcome": "52% opened · 7 replies · 2 became pieces"},
+        {"id": "n2", "subject": "A founder tool priced like a phone bill",
+         "when": "2 months ago", "audience": "Press list · everyone", "sent": 71, "open_rate": 0.44, "replies": 3,
+         "state": "sent",
+         "body": [
+             "₹2,000 a month, first month free. That's the whole pricing page.",
+             "The interesting question isn't the price — it's what a founder stops paying for.",
+         ],
+         "ps": None,
+         "outcome": "44% opened · 3 replies · 1 became a piece"},
+        {"id": "n3", "subject": "PRESS RELEASE: Zeroto10 announces AI platform",
+         "when": "4 months ago", "audience": "Press list · everyone", "sent": 64, "open_rate": 0.19, "replies": 0,
+         "state": "sent",
+         "body": [
+             "FOR IMMEDIATE RELEASE — Zeroto10 today announced the launch of its AI-powered operational platform for founders.",
+         ],
+         "ps": None,
+         "outcome": "19% opened · 0 replies · 3 asked to be dropped",
+        },
+    ],
+    "sequences": [
+        {"id": "welcome", "name": "New reporter note", "trigger": "when a name is added", "state": "live",
+         "audience": "6 this month", "stat": "71% open · 2 replies"},
+        {"id": "winback", "name": "Second touch", "trigger": "10 days after a first note, if quiet", "state": "draft",
+         "audience": "12 would qualify", "stat": "waiting on your approval"},
+        {"id": "thanks", "name": "Coverage thank-you", "trigger": "when a piece runs", "state": "live",
+         "audience": "every piece", "stat": "where the second piece usually comes from"},
+    ],
+    "notes": [
+        "The press release is the worst thing you have ever sent — 19%, and three drops.",
+        "Every piece you have won came from a reply, not a pitch.",
+        "Reporters open you at 8am. Nothing after 11am gets read the same day.",
+        "Naming what broke gets more replies than naming what worked.",
+    ],
+    "health": {
+        "title": "Whether reporters still want to hear from you",
+        "blurb": "A press list is 84 people who can stop reading you forever. This is how close you are to that.",
+        "scores": [
+            {"id": "drops", "label": "Asked to be dropped", "value": "3 of 84", "state": "watch",
+             "note": "all three after the press release — that format costs you names"},
+            {"id": "reply", "label": "Reply rate", "value": "9%", "state": "good",
+             "note": "anything above 5% on a cold press list is unusual"},
+            {"id": "fresh", "label": "List freshness", "value": "11 stale", "state": "watch",
+             "note": "11 names have changed beat or outlet since you added them"},
+            {"id": "cadence", "label": "Cadence", "value": "Every 3 weeks", "state": "good",
+             "note": "often enough to be remembered, rare enough not to be muted"},
+        ],
+        "updates": [
+            "5 of 12 reporters have replied once — nothing is pitched to them until the second touch.",
+            "Two names bounced at their old outlet and were moved, not deleted.",
+            "The next note is held until the press list refresh you have waiting.",
+        ],
+    },
+    "nouns": {
+        "one": "note", "many": "notes", "metric": "opened",
+        "automations": "follow-ups", "audience_word": "press list",
+    },
+    "ui": {
+        "tint": "b3",
+        "floor_label": "PR",
+        "floor_href": "/pr",
+        "placeholder": "Direct Allya — what should the press hear?",
+        "suggestions": [
+            "Write the next press note",
+            "Say what broke, not what worked",
+            "A note to the 12 being warmed",
+        ],
+        "know_title": "What I know about your press notes",
+        "brain_title": "The brain · newsletters",
+        "brain_subtitle": "touch a thought",
+        "back_label": "Back to PR",
+        "back_href": "/pr",
+    },
+    "work_ids": ["presslist", "pr_warm", "coverage"],
+}
+
+DIRECTIONS["newsletters"] = NEWSLETTERS_PAGE
+
+CAMPAIGN_FACTS.update({
+    "n-next": {"clicked": 0, "left": 0, "bad": 0,
+               "created": "3 Aug, 7:20am", "scheduled": "13 Aug, 8:00am", "sent_on": None},
+    "n1": {"clicked": 19, "left": 0, "bad": 1,
+           "created": "12 Jul, 6:05am", "scheduled": "15 Jul, 8:00am", "sent_on": "15 Jul, 8:00am"},
+    "n2": {"clicked": 12, "left": 0, "bad": 2,
+           "created": "2 Jun, 9:30pm", "scheduled": "5 Jun, 8:00am", "sent_on": "5 Jun, 8:02am"},
+    "n3": {"clicked": 3, "left": 3, "bad": 4,
+           "created": "8 Apr, 2:15pm", "scheduled": "10 Apr, 12:00pm", "sent_on": "10 Apr, 12:00pm"},
+})

@@ -285,6 +285,17 @@ def get_instrument(sid: str):
     return m.Instrument(surface_id=sid, **inst)
 
 
+@app.get(f"{V1}/directions", response_model=list[m.DirectionSummary])
+def list_directions():
+    """Which directions are rooms rather than panels, and where they live.
+    The floor's brain needs this to know which dots it can fly into."""
+    return [
+        m.DirectionSummary(id=d["id"], label=d["label"], href=d["ui"]["floor_href"] + "/" + d["id"],
+                           surface_id=d["surface_id"])
+        for d in data.DIRECTIONS.values()
+    ]
+
+
 def _direction(did: str) -> dict:
     page = data.DIRECTIONS.get(did)
     if not page:

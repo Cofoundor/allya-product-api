@@ -420,6 +420,18 @@ class Send(Base):
     state: Literal["sent", "scheduled", "draft"] = "sent"
     # what it did, in its own words ("11 replies · 3 became calls")
     outcome: Optional[str] = None
+    # the work item this campaign is waiting behind, if it is waiting on a
+    # human at all. A campaign with one is pending, whatever its state.
+    work_id: Optional[str] = None
+
+
+class DirectionSummary(Base):
+    """A direction with a room of its own. The floor's brain reads this to
+    know which of its dots are places you fly into, and where they go."""
+    id: str
+    label: str
+    href: str
+    surface_id: str
 
 
 class DateFact(Base):
@@ -486,6 +498,9 @@ class ChannelUi(Base):
     behind these fields and the client doesn't change."""
     # which of the floor's branch tints this direction wears
     tint: str
+    # the floor it belongs to, said the way the crumb and the brain need it
+    floor_label: str
+    floor_href: str
     placeholder: str
     suggestions: list[str]
     know_title: str
@@ -604,3 +619,368 @@ class Gate(Base):
     footnote_link_label: str
     footnote_link_href: str
     brain: BrainGraph
+
+
+# ---- the people layer --------------------------------------------------
+#
+# Every floor acts on people, and until now no floor could name one. The
+# funnel on sales, the ladder on hiring and the radar on PR are the same
+# object drawn three ways: a person, at a stage, last touched on a date.
+# So there is one record here, not one per department.
+
+PersonKind = Literal["customer", "prospect", "journalist", "candidate", "investor", "partner"]
+
+# what happened, in the fewest kinds that still read differently
+TouchKind = Literal[
+    "signup", "email", "whatsapp", "call", "meeting", "payment",
+    "churn", "note", "press", "application", "stage", "import",
+]
+
+# who did it. Wider than Origin, because on a person's timeline the
+# founder's own moves belong next to the agent's — same grammar as TrailRow.
+TouchBy = Literal["agent", "expert", "you"]
+
+# how long since anyone spoke to them, said as a word rather than a number
+Warmth = Literal["warm", "cooling", "cold", "never"]
+
+DealState = Literal["open", "won", "lost"]
+SourceState = Literal["connected", "available", "error"]
+
+
+class Stage(Base):
+    """One band of a pipeline. `at` is the lane index the instruments already
+    encode with, so a stage and a funnel band are the same number."""
+
+    id: str
+    label: str
+    at: int
+    kind: Literal["open", "won", "lost", "dormant"] = "open"
+    note: str = ""
+
+
+class Pipeline(Base):
+    """A named ordered set of stages. The sales funnel, the hiring ladder and
+    the press radar are this, with different stages and different geometry.
+
+    `counts` is derived on every read, never stored — the moment a stored
+    count and the people disagree, the funnel is decoration."""
+
+    id: str
+    label: str
+    person_kind: PersonKind
+    surface_id: str
+    geometry: Literal["funnel", "ladder", "radar"]
+    # what a number on this pipeline means: "people", "₹", "days since contact"
+    unit: str
+    stages: list[Stage]
+    counts: dict[str, int] = {}
+    # money in the open stages, when the pipeline carries money at all
+    value: Optional[int] = None
+
+
+class Company(Base):
+    """The account a person belongs to. Optional on purpose: a founder selling
+    self-serve has people and no companies, and shouldn't be made to invent
+    them."""
+
+    id: str
+    name: str
+    domain: Optional[str] = None
+    size: Optional[str] = None
+    industry: Optional[str] = None
+    stage_id: Optional[str] = None
+    people_count: int = 0
+    value: Optional[int] = None
+    note: str = ""
+
+
+class Deal(Base):
+    """What's actually on the table. Drawn as a band on the money funnel, not
+    as a card on a board — a founder with four deals doesn't need a Kanban."""
+
+    id: str
+    person_id: Optional[str] = None
+    company_id: Optional[str] = None
+    title: str
+    value: int
+    currency: str = "INR"
+    pipeline_id: str = "deals"
+    stage_id: str
+    state: DealState = "open"
+    opened: str
+    expected_close: Optional[str] = None
+    work_id: Optional[str] = None
+    note: str = ""
+
+
+class Touch(Base):
+    """One thing that happened to one person — the journey's atom.
+
+    `text` is already said the way it reads ("Opened the win-back note twice,
+    didn't reply"). Nothing downstream composes a sentence out of fields."""
+
+    id: str
+    person_id: str
+    at: int
+    kind: TouchKind
+    by: TouchBy
+    text: str
+    # "your sales expert" — never a name we made up
+    who: Optional[str] = None
+    channel: Optional[str] = None
+    work_id: Optional[str] = None
+    campaign_id: Optional[str] = None
+    direction_id: Optional[str] = None
+    surface_id: Optional[str] = None
+
+
+class StageChange(Base):
+    at: int
+    from_id: Optional[str] = None
+    to_id: str
+    by: TouchBy
+    note: str = ""
+
+
+class Journey(Base):
+    """Everything that ever happened to one person, in one place. This is the
+    whole point of the layer."""
+
+    person_id: str
+    name: str
+    touches: list[Touch]
+    stages: list[StageChange]
+    opened: str
+    note: str = ""
+
+
+class Person(Base):
+    """One human, whatever they are to you. A journalist and a lead and a
+    candidate are the same record with a different kind — which is what lets
+    PR, sales and hiring read the same book."""
+
+    id: str
+    name: str
+    kinds: list[PersonKind]
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    handle: Optional[str] = None
+    company_id: Optional[str] = None
+    pipeline_id: str
+    stage_id: str
+    warmth: Warmth = "never"
+    # which source put them here: "product-signups", "csv", "site"
+    source: str = ""
+    # who has been working them — the 85/15 seam, on the customer record
+    owner: TouchBy = "agent"
+    tags: list[str] = []
+    value: Optional[int] = None
+    created: str = ""
+    last_touch_at: Optional[int] = None
+    # Allya's one-line read, in her voice. Not a field the founder fills in.
+    note: str = ""
+
+
+class PersonDetail(Person):
+    """A person, opened: who they're with, what's on the table, and the whole
+    trail behind them."""
+
+    company: Optional[Company] = None
+    deals: list[Deal] = []
+    touches: list[Touch] = []
+    segments: list[str] = []
+    facts: list[str] = []
+    next: list[Move] = []
+
+
+class PersonList(Base):
+    people: list[Person]
+    total: int
+    cursor: Optional[str] = None
+    # what the filter narrowed to, said plainly above the list
+    caption: str = ""
+
+
+class PersonIn(Base):
+    name: str = Field(min_length=1, max_length=120)
+    email: Optional[str] = Field(default=None, max_length=254)
+    phone: Optional[str] = Field(default=None, max_length=40)
+    handle: Optional[str] = Field(default=None, max_length=80)
+    kinds: list[PersonKind] = ["prospect"]
+    company: Optional[str] = Field(default=None, max_length=120)
+    stage_id: Optional[str] = None
+    note: str = Field(default="", max_length=400)
+
+
+class PersonPatch(Base):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    email: Optional[str] = Field(default=None, max_length=254)
+    phone: Optional[str] = Field(default=None, max_length=40)
+    handle: Optional[str] = Field(default=None, max_length=80)
+    kinds: Optional[list[PersonKind]] = None
+    tags: Optional[list[str]] = None
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
+class TouchIn(Base):
+    kind: TouchKind = "note"
+    text: str = Field(min_length=1, max_length=2000)
+    by: TouchBy = "you"
+
+
+class StageIn(Base):
+    stage_id: str
+    note: str = Field(default="", max_length=400)
+
+
+class DealIn(Base):
+    person_id: Optional[str] = None
+    company_id: Optional[str] = None
+    title: str = Field(min_length=1, max_length=160)
+    value: int = Field(ge=0)
+    stage_id: Optional[str] = None
+    expected_close: Optional[str] = None
+    note: str = Field(default="", max_length=400)
+
+
+class DealPatch(Base):
+    stage_id: Optional[str] = None
+    state: Optional[DealState] = None
+    value: Optional[int] = Field(default=None, ge=0)
+    expected_close: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
+class SegmentRule(Base):
+    """A segment said as a filter rather than a sentence. Empty lists mean
+    'don't narrow on this', so an all-empty rule is everyone."""
+
+    kinds: list[PersonKind] = []
+    stage_ids: list[str] = []
+    warmth: list[Warmth] = []
+    tags: list[str] = []
+    sources: list[str] = []
+    # nobody has spoken to them in this many days
+    not_touched_days: Optional[int] = None
+    # they have at least one touch of this kind
+    touched_kind: Optional[TouchKind] = None
+    # they have none of this kind — "never opened anything"
+    never_kind: Optional[TouchKind] = None
+
+
+class Segment(Base):
+    """What `audience` used to be a sentence about. A campaign still says
+    "Signups who never opened" out loud; this is what that resolves to."""
+
+    id: str
+    label: str
+    rule: SegmentRule
+    count: int = 0
+    # recomputed on read, rather than a list frozen when it was made
+    live: bool = True
+    note: str = ""
+
+
+class SegmentIn(Base):
+    label: str = Field(min_length=1, max_length=120)
+    rule: SegmentRule
+    note: str = Field(default="", max_length=400)
+
+
+class DupeRow(Base):
+    """Two rows that are one person. `keep` is what the merge would leave."""
+
+    row: int
+    incoming: str
+    existing_id: str
+    existing: str
+    matched_on: Literal["email", "phone", "handle", "name"]
+    keep: str
+
+
+class ImportPreview(Base):
+    """What a file would do, before it does it. Nothing is stored by the call
+    that returns this."""
+
+    columns: list[str]
+    # column heading -> the field we think it is
+    mapping: dict[str, str]
+    rows_total: int
+    rows_ready: int
+    duplicates: list[DupeRow] = []
+    problems: list[str] = []
+    sample: list[dict[str, str]] = []
+
+
+class ImportIn(Base):
+    csv: str = Field(min_length=1)
+    mapping: dict[str, str] = {}
+    kind: PersonKind = "prospect"
+    # merge onto the existing record, or leave the incoming row out
+    on_duplicate: Literal["merge", "skip"] = "merge"
+    segment_label: Optional[str] = Field(default=None, max_length=120)
+
+
+class ImportResult(Base):
+    added: int
+    merged: int
+    skipped: int
+    segment_id: Optional[str] = None
+    learned: list[str] = []
+
+
+class IngestIn(Base):
+    """One event from somewhere else — a signup, a payment, an open, a reply.
+    Resolved onto a person by email, then phone, then handle; a miss creates
+    one, because a touch with nobody to hang on is a touch we lose."""
+
+    kind: TouchKind
+    source: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    handle: Optional[str] = None
+    name: Optional[str] = None
+    at: Optional[int] = None
+    text: Optional[str] = Field(default=None, max_length=2000)
+    campaign_id: Optional[str] = None
+    meta: dict[str, str] = {}
+
+
+class IngestResult(Base):
+    person_id: str
+    created: bool
+    touch_id: str
+    stage_id: str
+    # said the way the feed says it: "Moved to In conversation"
+    note: str = ""
+
+
+class Source(Base):
+    """Where the people come from, and when it last brought any."""
+
+    id: str
+    label: str
+    state: SourceState
+    blurb: str
+    last_sync: Optional[str] = None
+    count: Optional[int] = None
+    note: str = ""
+
+
+class CrmPage(Base):
+    """The people layer, dressed. Same shape as a channel page on purpose —
+    the studio shell reads both."""
+
+    id: str
+    label: str
+    blurb: str
+    stats: list[Stat]
+    progress: Optional[Progress] = None
+    # the one thing waiting on you, by work id
+    awaiting: Optional[str] = None
+    pipelines: list[Pipeline]
+    segments: list[Segment]
+    sources: list[Source]
+    notes: list[str]
+    nouns: Nouns
+    ui: ChannelUi
