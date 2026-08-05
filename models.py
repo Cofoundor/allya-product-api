@@ -417,6 +417,43 @@ class Send(Base):
     open_rate: float
     replies: int
     state: Literal["sent", "scheduled", "draft"] = "sent"
+    # what it actually said — a paragraph per entry, so a campaign can be
+    # read and not just counted
+    body: list[str] = []
+    ps: Optional[str] = None
+    # what it did, in its own words ("11 replies · 3 became calls")
+    outcome: Optional[str] = None
+
+
+class Score(Base):
+    """One reading on whether the channel itself is in good standing."""
+    id: str
+    label: str
+    # a channel says it its own way: "94", "Green", "Tier 2 · 1k/day"
+    value: str
+    state: Literal["good", "watch", "bad"]
+    note: str
+
+
+class Health(Base):
+    """The thing that decides whether any of the work above ever arrives.
+    Email calls it deliverability; WhatsApp calls it quality rating."""
+    title: str
+    blurb: str
+    scores: list[Score]
+    warmup: Optional[Progress] = None
+    updates: list[str]
+
+
+class Nouns(Base):
+    """A channel's own words. One page serves both, and neither has to
+    speak the other's language."""
+    one: str
+    many: str
+    # what the headline rate is called: "opened" / "read"
+    metric: str
+    automations: str
+    audience_word: str
 
 
 class Sequence(Base):
@@ -429,6 +466,8 @@ class Sequence(Base):
 
 
 class EmailPage(Base):
+    """A channel you can run campaigns on. Email was the first; WhatsApp is
+    the same shape with its own words, its own health and its own limits."""
     id: str
     surface_id: str
     label: str
@@ -441,6 +480,9 @@ class EmailPage(Base):
     sends: list[Send]
     sequences: list[Sequence]
     notes: list[str]
+    # standing of the channel itself — deliverability, quality rating
+    health: Optional[Health] = None
+    nouns: Optional[Nouns] = None
 
 
 # ---- the gate ----------------------------------------------------------

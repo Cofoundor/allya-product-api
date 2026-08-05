@@ -263,6 +263,12 @@ MARKETING_BRANCHES = [
         ("pd_creative", "Creative: the 11pm line"),
         ("pd_cac", "Only spend after CAC proof"),
     ]),
+    ("whatsapp", "WhatsApp", "WhatsApp", [
+        ("wa_festive", "Festive offer — waiting on Meta"),
+        ("wa_tier", "280 numbers off the 10k tier"),
+        ("wa_quality", "Quality back to green"),
+        ("wa_quiet", "Ask the quiet 30-day list one question"),
+    ]),
 ]
 
 STUB_BRANCHES = {
@@ -1315,20 +1321,72 @@ EMAIL_PAGE = {
     "sends": [
         {"id": "s-next", "subject": "The agency did 13 campaigns. In one month.",
          "when": "Tuesday 9am", "audience": "Everyone", "sent": 0, "open_rate": 0, "replies": 0,
-         "state": "scheduled"},
+         "state": "scheduled",
+         "body": [
+             "An agency quoted you ₹80,000 a month and a two-week turnaround per campaign.",
+             "We ran 13 in the first month. Not because anyone worked harder — because nobody had to wait for anybody.",
+         ],
+         "ps": "P.S. — reply with one word if you want the breakdown.",
+         "outcome": "goes Tuesday 9am · holds 10 min after you approve"},
         {"id": "s1", "subject": "You didn’t start a company to write newsletters at 11pm",
          "when": "last Tuesday", "audience": "Everyone", "sent": 374, "open_rate": 0.41, "replies": 11,
-         "state": "sent"},
+         "state": "sent",
+         "body": [
+             "It’s 11pm and you’re writing a newsletter. Again.",
+             "Nobody starts a company for this part. The work that only you can do got pushed to tomorrow, and tomorrow it will get pushed again.",
+         ],
+         "ps": "P.S. — one word back and I’ll show you what this week could look like.",
+         "outcome": "41% opened · 11 replies · 3 became calls"},
         {"id": "s2", "subject": "What ₹2,000 a month actually buys you",
          "when": "2 weeks ago", "audience": "Everyone", "sent": 351, "open_rate": 0.34, "replies": 4,
-         "state": "sent"},
+         "state": "sent",
+         "body": [
+             "₹2,000 a month is less than one freelancer’s invoice for one landing page.",
+             "Here is what it covered last month: 13 campaigns, 6 shorts, a rebuilt CRM, and two hires screened.",
+         ],
+         "ps": None,
+         "outcome": "34% opened · 4 replies"},
         {"id": "s3", "subject": "Introducing our AI-powered operations platform",
          "when": "3 weeks ago", "audience": "Everyone", "sent": 340, "open_rate": 0.23, "replies": 0,
-         "state": "sent"},
+         "state": "sent",
+         "body": [
+             "We’re excited to introduce our AI-powered operations platform, built to streamline your workflows end to end.",
+         ],
+         "ps": None,
+         "outcome": "23% opened · 0 replies — your worst send"},
         {"id": "s4", "subject": "28 tasks in 30 days — how Mili did it",
          "when": "a month ago", "audience": "Everyone", "sent": 318, "open_rate": 0.39, "replies": 7,
-         "state": "sent"},
+         "state": "sent",
+         "body": [
+             "28 tasks in 30 days, one founder, no hires.",
+             "The list is boring on purpose: invoices chased, a JD posted, six candidates screened, a press list rebuilt.",
+         ],
+         "ps": "P.S. — want the list? One word.",
+         "outcome": "39% opened · 7 replies"},
     ],
+    "health": {
+        "title": "Can you actually reach them",
+        "blurb": "None of the work above matters if it lands in spam. This is the channel’s own standing.",
+        "scores": [
+            {"id": "domain", "label": "Domain reputation", "value": "94", "state": "good",
+             "note": "Google Postmaster · high, steady for 3 weeks"},
+            {"id": "spf", "label": "SPF · DKIM · DMARC", "value": "All three", "state": "good",
+             "note": "DMARC is at p=none — tighten it once the warm-up is done"},
+            {"id": "spam", "label": "Spam rate", "value": "0.04%", "state": "good",
+             "note": "the line you don’t want to cross is 0.3%"},
+            {"id": "bounce", "label": "Bounce rate", "value": "1.2%", "state": "watch",
+             "note": "up from 0.4% — the cold 200 are dragging it"},
+        ],
+        "updates": [
+            "Day 4 of 14 on the cold 200 — 0 bounces so far.",
+            "Sending volume stepped up to 40 a day; nothing sends to the cold list until day 14.",
+            "One address hard-bounced on the main list and was removed automatically.",
+        ],
+    },
+    "nouns": {
+        "one": "send", "many": "sends", "metric": "opened",
+        "automations": "sequences", "audience_word": "list",
+    },
     "sequences": [
         {"id": "welcome", "name": "Welcome", "trigger": "on signup", "state": "live",
          "audience": "38 this month", "stat": "62% open · 5 replies"},
@@ -1346,6 +1404,109 @@ EMAIL_PAGE = {
         "Sends before 9am get read; sends after 4pm don’t.",
     ],
 }
+
+# The same shape, a different channel. WhatsApp is not email with shorter
+# lines: you send templates that Meta approves, your number carries a quality
+# rating, and how many you may send in a day is a tier you earn. Everything
+# that differs is a field that differs, not a comment.
+
+WHATSAPP_PAGE = {
+    "id": "whatsapp",
+    "surface_id": "marketing",
+    "label": "WhatsApp",
+    "blurb": "Where your customers already are. Read in minutes — which is exactly why you don’t get to waste it.",
+    "stats": [
+        {"id": "list", "value": "268", "label": "opted in", "delta": "+52 this month"},
+        {"id": "open", "value": "88%", "label": "read the last one", "delta": "+2 vs the one before"},
+        {"id": "reply", "value": "34", "label": "replied", "delta": "9 became calls"},
+        {"id": "unsub", "value": "6", "label": "blocked or opted out", "delta": None},
+    ],
+    "progress": {
+        "label": "Earning the next messaging tier",
+        "value": 720,
+        "of": 1000,
+        "note": "720 unique numbers in 24h · 1,000 unlocks the 10k tier",
+    },
+    "awaiting": None,
+    "sends": [
+        {"id": "w-next", "subject": "Festive offer — first month free",
+         "when": "Friday 11am", "audience": "Opted in · everyone", "sent": 0, "open_rate": 0, "replies": 0,
+         "state": "draft",
+         "body": [
+             "Hi {{1}} — the first month is on us this festive season.",
+             "Reply START and I’ll set it up on your account today.",
+         ],
+         "ps": None,
+         "outcome": "template submitted to Meta · awaiting approval"},
+        {"id": "w1", "subject": "Your weekly numbers are in",
+         "when": "last Friday", "audience": "Opted in · everyone", "sent": 241, "open_rate": 0.88, "replies": 34,
+         "state": "sent",
+         "body": [
+             "Hi {{1}} — 3 campaigns went out this week and 2 are still running.",
+             "Say NUMBERS and I’ll send the one-pager.",
+         ],
+         "ps": None,
+         "outcome": "88% read · 34 replies · 9 became calls"},
+        {"id": "w2", "subject": "One question about last month",
+         "when": "3 weeks ago", "audience": "Quiet 30+ days", "sent": 96, "open_rate": 0.71, "replies": 12,
+         "state": "sent",
+         "body": [
+             "Hi {{1}} — you stopped opening these. Was it the timing, or the content?",
+             "One word back is enough. It changes what I send you next.",
+         ],
+         "ps": None,
+         "outcome": "71% read · 12 replies — the highest reply rate you have"},
+        {"id": "w3", "subject": "We’ve launched something new!!",
+         "when": "last month", "audience": "Opted in · everyone", "sent": 230, "open_rate": 0.52, "replies": 1,
+         "state": "sent",
+         "body": [
+             "🎉 BIG NEWS!! We’ve just launched our brand new AI platform!! Check it out now!!",
+         ],
+         "ps": None,
+         "outcome": "52% read · 1 reply · 4 blocks — the send that cost you quality"},
+    ],
+    "sequences": [
+        {"id": "optin", "name": "Opt-in confirm", "trigger": "on first message", "state": "live",
+         "audience": "52 this month", "stat": "instant · 0 complaints"},
+        {"id": "abandon", "name": "Left mid-signup", "trigger": "2 hours after a stalled signup", "state": "live",
+         "audience": "31 this month", "stat": "64% read · 8 finished"},
+        {"id": "renew", "name": "Renewal nudge", "trigger": "7 days before renewal", "state": "draft",
+         "audience": "18 would qualify", "stat": "template not submitted yet"},
+        {"id": "wa_ps", "name": "One-word reply", "trigger": "every broadcast", "state": "live",
+         "audience": "every broadcast", "stat": "where every reply starts"},
+    ],
+    "notes": [
+        "Replies come in under 4 minutes here. Email takes a day.",
+        "The all-caps launch broadcast is the only thing that ever got you blocked.",
+        "Utility templates get approved in an hour; marketing ones take a day.",
+        "Broadcasts after 8pm read fine but reply at half the rate.",
+    ],
+    "health": {
+        "title": "Your number’s standing with Meta",
+        "blurb": "Quality is a rating, not an opinion. Drop to red and the sending limit drops with it.",
+        "scores": [
+            {"id": "quality", "label": "Quality rating", "value": "Green", "state": "good",
+             "note": "high · recovered after the launch broadcast"},
+            {"id": "tier", "label": "Messaging limit", "value": "1,000 / day", "state": "watch",
+             "note": "720 of 1,000 unique numbers reached — the next tier is 10k"},
+            {"id": "number", "label": "Number status", "value": "Connected", "state": "good",
+             "note": "verified business · display name approved"},
+            {"id": "templates", "label": "Templates", "value": "6 live · 1 pending", "state": "watch",
+             "note": "the festive offer is with Meta — usually a day for marketing"},
+        ],
+        "updates": [
+            "Quality came back to green 9 days after the launch broadcast.",
+            "720 unique numbers in the last 24h — 280 more and the limit goes to 10k.",
+            "One template was rejected for using “FREE!!” in the header; rewritten and resubmitted.",
+        ],
+    },
+    "nouns": {
+        "one": "broadcast", "many": "broadcasts", "metric": "read",
+        "automations": "automations", "audience_word": "opt-in list",
+    },
+}
+
+DIRECTIONS: dict[str, dict] = {"email": EMAIL_PAGE, "whatsapp": WHATSAPP_PAGE}
 
 
 # ---- the gate ----------------------------------------------------------

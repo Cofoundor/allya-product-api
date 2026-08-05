@@ -285,10 +285,14 @@ def get_instrument(sid: str):
     return m.Instrument(surface_id=sid, **inst)
 
 
-@app.get(f"{V1}/directions/email", response_model=m.EmailPage)
-def get_email_direction():
-    """One job inside marketing, at the depth a founder works at."""
-    return m.EmailPage(**data.EMAIL_PAGE)
+@app.get(f"{V1}/directions/{{did}}", response_model=m.EmailPage)
+def get_direction(did: str):
+    """One job inside a floor, at the depth a founder works at. Email and
+    WhatsApp are the same shape with their own words, health and limits."""
+    page = data.DIRECTIONS.get(did)
+    if not page:
+        raise HTTPException(404, f"no direction '{did}'")
+    return m.EmailPage(**page)
 
 
 # ---- work actions ------------------------------------------------------
