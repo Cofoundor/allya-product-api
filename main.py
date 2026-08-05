@@ -312,9 +312,10 @@ def list_campaigns(did: str):
 @app.get(f"{V1}/directions/{{did}}/campaigns/{{cid}}", response_model=m.Campaign)
 def get_campaign(did: str, cid: str):
     """One campaign, opened: what it said as well as what it did."""
-    for c in _direction(did)["campaigns"]:
+    page = _direction(did)
+    for c in page["campaigns"]:
         if c["id"] == cid:
-            return m.Campaign(**c)
+            return m.Campaign(**data.campaign_detail(page, c))
     raise HTTPException(404, f"no campaign '{cid}'")
 
 

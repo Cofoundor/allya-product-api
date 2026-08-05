@@ -1811,3 +1811,77 @@ def add_campaign(page: dict, draft: dict, subject=None) -> dict:
     }
     page["campaigns"].insert(0, row)
     return row
+
+
+# ---- what a campaign is made of, opened ---------------------------------
+#
+# Numbers a row doesn't carry (clicks, unsubscribes, bounces) and the three
+# points on its clock. Keyed by campaign id so the seed above stays readable.
+
+CAMPAIGN_FACTS: dict[str, dict] = {
+    # email
+    "s-next": {"clicked": 0, "left": 0, "bad": 0,
+               "created": "4 Aug, 6:10pm", "scheduled": "12 Aug, 9:00am", "sent_on": None},
+    "s1": {"clicked": 63, "left": 1, "bad": 2,
+           "created": "27 Jul, 9:40pm", "scheduled": "29 Jul, 9:00am", "sent_on": "29 Jul, 9:00am"},
+    "s2": {"clicked": 41, "left": 1, "bad": 3,
+           "created": "20 Jul, 11:02am", "scheduled": "22 Jul, 9:00am", "sent_on": "22 Jul, 9:04am"},
+    "s3": {"clicked": 12, "left": 4, "bad": 5,
+           "created": "13 Jul, 3:20pm", "scheduled": "15 Jul, 4:30pm", "sent_on": "15 Jul, 4:31pm"},
+    "s4": {"clicked": 58, "left": 0, "bad": 1,
+           "created": "2 Jul, 8:15am", "scheduled": "4 Jul, 9:00am", "sent_on": "4 Jul, 9:00am"},
+    # whatsapp
+    "w-next": {"clicked": 0, "left": 0, "bad": 0,
+               "created": "5 Aug, 10:05am", "scheduled": "8 Aug, 11:00am", "sent_on": None},
+    "w1": {"clicked": 51, "left": 1, "bad": 0,
+           "created": "31 Jul, 7:50pm", "scheduled": "1 Aug, 11:00am", "sent_on": "1 Aug, 11:00am"},
+    "w2": {"clicked": 9, "left": 0, "bad": 1,
+           "created": "14 Jul, 9:12am", "scheduled": "15 Jul, 10:30am", "sent_on": "15 Jul, 10:30am"},
+    "w3": {"clicked": 18, "left": 2, "bad": 4,
+           "created": "3 Jul, 5:40pm", "scheduled": "5 Jul, 8:30pm", "sent_on": "5 Jul, 8:31pm"},
+}
+
+
+def _pct(x: float) -> str:
+    return f"{round(x * 100)}%"
+
+
+def campaign_detail(page: dict, row: dict) -> dict:
+    """A campaign with the numbers and the dates that only matter once
+    you've opened it. What's worth showing depends on the state: a draft
+    has an audience and an approval, one that's out has opens and replies."""
+    f = CAMPAIGN_FACTS.get(row["id"], {})
+    nouns, out = page["nouns"], row["state"] == "sent"
+    n, wa = row["sent"], page["id"] == "whatsapp"
+
+    if out:
+        opened = round(row["open_rate"] * n)
+        kpis = [
+            {"id": "delivered", "value": str(n), "label": "delivered",
+             "delta": f"{f.get('bad', 0)} {'undelivered' if wa else 'bounced'}"},
+            {"id": "opened", "value": _pct(row["open_rate"]), "label": nouns["metric"],
+             "delta": f"{opened} of {n}"},
+            {"id": "clicked", "value": str(f.get("clicked", 0)),
+             "label": "clicked something",
+             "delta": _pct(f.get("clicked", 0) / n) + " of delivered" if n else None},
+            {"id": "replied", "value": str(row["replies"]), "label": "replied",
+             "delta": _pct(row["replies"] / n) + " of delivered" if n else None},
+            {"id": "left", "value": str(f.get("left", 0)),
+             "label": "blocked or opted out" if wa else "unsubscribed", "delta": None},
+            {"id": "window", "value": row["when"], "label": "went out", "delta": row["audience"]},
+        ]
+    else:
+        kpis = [
+            {"id": "audience", "value": row["audience"], "label": "goes to", "delta": None},
+            {"id": "when", "value": row["when"], "label": "goes", "delta": "holds 10 min after you approve"},
+            {"id": "state", "value": row["state"], "label": "where it is",
+             "delta": row.get("outcome")},
+        ]
+
+    dates = [d for d in (
+        {"label": "Written", "value": f.get("created")},
+        {"label": "Scheduled for", "value": f.get("scheduled")},
+        {"label": "Went out", "value": f.get("sent_on")},
+    ) if d["value"]]
+
+    return {**row, "kpis": kpis, "dates": dates}

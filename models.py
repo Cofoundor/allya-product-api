@@ -422,10 +422,22 @@ class Send(Base):
     outcome: Optional[str] = None
 
 
+class DateFact(Base):
+    """One point on a campaign's clock, already said the way it reads."""
+    label: str
+    value: str
+
+
 class Campaign(Send):
-    """One campaign, opened: the same row plus what it actually said."""
+    """One campaign, opened: the row, what it said, what it did and when.
+
+    `kpis` is a list rather than fixed fields because what's worth showing
+    depends on the state — a draft has an audience and an approval, a sent
+    one has opens and replies — and on the channel."""
     body: list[str] = []
     ps: Optional[str] = None
+    kpis: list[Stat] = []
+    dates: list[DateFact] = []
 
 
 class Score(Base):
