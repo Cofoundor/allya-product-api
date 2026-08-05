@@ -285,14 +285,85 @@ def get_instrument(sid: str):
     return m.Instrument(surface_id=sid, **inst)
 
 
+def _direction(did: str) -> dict:
+    page = data.DIRECTIONS.get(did)
+    if not page:
+        raise HTTPException(404, f"no direction '{did}'")
+    return page
+
+
 @app.get(f"{V1}/directions/{{did}}", response_model=m.EmailPage)
 def get_direction(did: str):
     """One job inside a floor, at the depth a founder works at. Email and
     WhatsApp are the same shape with their own words, health and limits."""
-    page = data.DIRECTIONS.get(did)
-    if not page:
-        raise HTTPException(404, f"no direction '{did}'")
-    return m.EmailPage(**page)
+    return m.EmailPage(**_direction(did))
+
+
+# ---- a direction's campaigns -------------------------------------------
+
+@app.get(f"{V1}/directions/{{did}}/campaigns", response_model=list[m.Send])
+def list_campaigns(did: str):
+    """Every campaign on this channel, newest intent first. The page splits
+    them into active and past by `state` — that's a rendering decision, not
+    two collections."""
+    return [m.Send(**c) for c in _direction(did)["campaigns"]]
+
+
+@app.get(f"{V1}/directions/{{did}}/campaigns/{{cid}}", response_model=m.Campaign)
+def get_campaign(did: str, cid: str):
+    """One campaign, opened: what it said as well as what it did."""
+    for c in _direction(did)["campaigns"]:
+        if c["id"] == cid:
+            return m.Campaign(**c)
+    raise HTTPException(404, f"no campaign '{cid}'")
+
+
+@app.post(f"{V1}/directions/{{did}}/campaigns/draft", response_model=m.Draft)
+def draft_campaign(did: str, answers: m.Answers):
+    """Write the campaign. This is the one piece of real business logic on
+    this page — replace this body with a generator and nothing on the
+    frontend has to move."""
+    return data.compose(_direction(did), answers.model_dump())
+
+
+@app.post(f"{V1}/directions/{{did}}/campaigns", response_model=m.Send, status_code=201)
+def create_campaign(did: str, answers: m.Answers, subject: str | None = None):
+    """Queue a campaign for review. In-memory: it joins the list the pane
+    reads, in the state a thing waiting on a human should be."""
+    page = _direction(did)
+    draft = data.compose(page, answers.model_dump())
+    return m.Send(**data.add_campaign(page, draft, subject))
+
+
+@app.get(f"{V1}/directions/{{did}}/questions", response_model=list[m.Question])
+def list_questions(did: str):
+    """The interview. Options quote live numbers, so they're built here
+    rather than stitched together in the client."""
+    return [m.Question(**q) for q in data.questions_for(_direction(did))]
+
+
+@app.post(f"{V1}/directions/{{did}}/questions/{{key}}/ack", response_model=m.Ack)
+def ack_answer(did: str, key: str, answer: m.Ack):
+    """What Allya says back when an answer lands — hers to say, not the
+    client's to invent."""
+    _direction(did)
+    return m.Ack(text=data.ack_for(key, answer.text))
+
+
+@app.get(f"{V1}/directions/{{did}}/ideas", response_model=list[m.Idea])
+def list_ideas(did: str):
+    """The thoughts on this channel's brain: what runs, what's drafted, and
+    what nobody has started."""
+    return [m.Idea(**i) for i in data.ideas_for(_direction(did))]
+
+
+@app.get(f"{V1}/directions/{{did}}/work", response_model=list[m.WorkItem])
+def direction_work(did: str):
+    """The work items that belong to this channel — which the channel
+    decides, not a regular expression in the browser."""
+    page = _direction(did)
+    ids = set(page["work_ids"])
+    return [m.WorkItem(**w) for w in data.WORK if w["id"] in ids]
 
 
 # ---- work actions ------------------------------------------------------

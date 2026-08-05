@@ -409,6 +409,7 @@ class Progress(Base):
 
 
 class Send(Base):
+    """A campaign in a list: enough to rank it, not enough to read it."""
     id: str
     subject: str
     when: str
@@ -417,12 +418,14 @@ class Send(Base):
     open_rate: float
     replies: int
     state: Literal["sent", "scheduled", "draft"] = "sent"
-    # what it actually said — a paragraph per entry, so a campaign can be
-    # read and not just counted
-    body: list[str] = []
-    ps: Optional[str] = None
     # what it did, in its own words ("11 replies · 3 became calls")
     outcome: Optional[str] = None
+
+
+class Campaign(Send):
+    """One campaign, opened: the same row plus what it actually said."""
+    body: list[str] = []
+    ps: Optional[str] = None
 
 
 class Score(Base):
@@ -465,9 +468,27 @@ class Sequence(Base):
     stat: str
 
 
+class ChannelUi(Base):
+    """Everything the page needs to dress itself. It lives here so the
+    frontend holds no channel copy of its own — swap the implementation
+    behind these fields and the client doesn't change."""
+    # which of the floor's branch tints this direction wears
+    tint: str
+    placeholder: str
+    suggestions: list[str]
+    know_title: str
+    brain_title: str
+    brain_subtitle: str
+    back_label: str
+    back_href: str
+
+
 class EmailPage(Base):
     """A channel you can run campaigns on. Email was the first; WhatsApp is
-    the same shape with its own words, its own health and its own limits."""
+    the same shape with its own words, its own health and its own limits.
+
+    Campaigns are not in here: they're their own collection, because they
+    are paged through, opened and created on their own."""
     id: str
     surface_id: str
     label: str
@@ -477,12 +498,68 @@ class EmailPage(Base):
     progress: Optional[Progress] = None
     # the one thing waiting on you, by work id
     awaiting: Optional[str] = None
-    sends: list[Send]
     sequences: list[Sequence]
     notes: list[str]
     # standing of the channel itself — deliverability, quality rating
     health: Optional[Health] = None
-    nouns: Optional[Nouns] = None
+    nouns: Nouns
+    ui: ChannelUi
+
+
+# ---- the interview, and what it produces -------------------------------
+
+class Question(Base):
+    key: Literal["audience", "point", "proof", "ask", "when"]
+    tag: str
+    ask: str
+    # 'answer' → the chip is the answer; 'starter' → it only opens the
+    # sentence, because the two questions that carry a claim must be the
+    # founder's own words
+    chips_are: Literal["answer", "starter"]
+    options: list[str]
+
+
+class Answers(Base):
+    audience: Optional[str] = None
+    point: Optional[str] = None
+    proof: Optional[str] = None
+    ask: Optional[str] = None
+    when: Optional[str] = None
+
+
+class Ack(Base):
+    """What Allya says back when an answer lands."""
+    text: str
+
+
+class Draft(Base):
+    """A campaign written out of five answers, not yet created."""
+    subjects: list[str]
+    preview: str
+    body: list[str]
+    ps: Optional[str] = None
+    audience: str
+    when: str
+    # what was applied without being asked, and why
+    rules: list[str]
+    next: list[str]
+
+
+class Idea(Base):
+    """A thought on the channel's brain."""
+    id: str
+    label: str
+    note: str
+    state: Literal["live", "draft", "idea"]
+    moves: list["Move"]
+    # what it hands the interview as "the one thing"
+    seed: str = ""
+    work: Optional[str] = None
+
+
+class Move(Base):
+    id: str
+    label: str
 
 
 # ---- the gate ----------------------------------------------------------

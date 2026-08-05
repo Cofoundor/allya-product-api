@@ -10,6 +10,7 @@ generically — "your brand expert" — never by an invented name.
 """
 
 import datetime
+import re
 import os
 import time
 
@@ -1310,6 +1311,8 @@ EMAIL_PAGE = {
         {"id": "open", "value": "41%", "label": "opened the last one", "delta": "+7 vs the one before"},
         {"id": "reply", "value": "11", "label": "replied", "delta": "3 became calls"},
         {"id": "unsub", "value": "2", "label": "left", "delta": None},
+        {"id": "clicks", "value": "18%", "label": "clicked something", "delta": "+3 vs the one before"},
+        {"id": "sends", "value": "4", "label": "sends this month", "delta": "1 queued"},
     ],
     "progress": {
         "label": "Warming 200 cold addresses",
@@ -1318,7 +1321,7 @@ EMAIL_PAGE = {
         "note": "0 bounces so far · nothing sends to them until day 14",
     },
     "awaiting": "newsletter",
-    "sends": [
+    "campaigns": [
         {"id": "s-next", "subject": "The agency did 13 campaigns. In one month.",
          "when": "Tuesday 9am", "audience": "Everyone", "sent": 0, "open_rate": 0, "replies": 0,
          "state": "scheduled",
@@ -1387,6 +1390,21 @@ EMAIL_PAGE = {
         "one": "send", "many": "sends", "metric": "opened",
         "automations": "sequences", "audience_word": "list",
     },
+    "ui": {
+        "tint": "b4",
+        "placeholder": "Direct Allya — what should this one say?",
+        "suggestions": [
+            "Write next week’s newsletter",
+            "Win back the quiet ones",
+            "A plain send, from me",
+        ],
+        "know_title": "What I know about your emails",
+        "brain_title": "The brain · email",
+        "brain_subtitle": "touch a thought",
+        "back_label": "Back to marketing",
+        "back_href": "/marketing",
+    },
+    "work_ids": ["newsletter", "warmup"],
     "sequences": [
         {"id": "welcome", "name": "Welcome", "trigger": "on signup", "state": "live",
          "audience": "38 this month", "stat": "62% open · 5 replies"},
@@ -1420,6 +1438,8 @@ WHATSAPP_PAGE = {
         {"id": "open", "value": "88%", "label": "read the last one", "delta": "+2 vs the one before"},
         {"id": "reply", "value": "34", "label": "replied", "delta": "9 became calls"},
         {"id": "unsub", "value": "6", "label": "blocked or opted out", "delta": None},
+        {"id": "speed", "value": "4 min", "label": "median time to read", "delta": "email takes a day"},
+        {"id": "sends", "value": "3", "label": "broadcasts this month", "delta": "1 waiting on Meta"},
     ],
     "progress": {
         "label": "Earning the next messaging tier",
@@ -1428,7 +1448,7 @@ WHATSAPP_PAGE = {
         "note": "720 unique numbers in 24h · 1,000 unlocks the 10k tier",
     },
     "awaiting": None,
-    "sends": [
+    "campaigns": [
         {"id": "w-next", "subject": "Festive offer — first month free",
          "when": "Friday 11am", "audience": "Opted in · everyone", "sent": 0, "open_rate": 0, "replies": 0,
          "state": "draft",
@@ -1504,6 +1524,21 @@ WHATSAPP_PAGE = {
         "one": "broadcast", "many": "broadcasts", "metric": "read",
         "automations": "automations", "audience_word": "opt-in list",
     },
+    "ui": {
+        "tint": "b1",
+        "placeholder": "Direct Allya — what should this broadcast say?",
+        "suggestions": [
+            "Write the festive offer",
+            "Ask the quiet ones one question",
+            "A utility template, not marketing",
+        ],
+        "know_title": "What I know about your WhatsApp",
+        "brain_title": "The brain · whatsapp",
+        "brain_subtitle": "touch a thought",
+        "back_label": "Back to marketing",
+        "back_href": "/marketing",
+    },
+    "work_ids": [],
 }
 
 DIRECTIONS: dict[str, dict] = {"email": EMAIL_PAGE, "whatsapp": WHATSAPP_PAGE}
@@ -1574,3 +1609,205 @@ GATE = {
         "links": [("product", "model"), ("market", "traction"), ("model", "traction")],
     },
 }
+
+
+# ---- the interview, the thoughts, and the writing ----------------------
+#
+# All three used to live in the frontend, which meant the client was
+# inventing questions, ideas and campaign copy. They belong here: this is
+# the contract a real generator replaces, one function at a time.
+
+_QUESTIONS = [
+    {"key": "audience", "tag": "Who it goes to", "chips_are": "answer",
+     "ask": "Who is this one for? Everyone, or a slice of the list."},
+    {"key": "point", "tag": "The one thing", "chips_are": "starter",
+     "ask": "What does it have to say? One sentence, in your words — I write around it, "
+            "I don’t replace it."},
+    {"key": "proof", "tag": "What backs it", "chips_are": "starter",
+     "ask": "What backs it up? A number, someone’s words, a before and after — or nothing "
+            "yet, which is fine."},
+    {"key": "ask", "tag": "The ask", "chips_are": "answer",
+     "ask": "And at the end — what do you want them to do?"},
+    {"key": "when", "tag": "When it goes", "chips_are": "answer",
+     "ask": "When should it go out?"},
+]
+
+_STARTERS = {
+    "point": ["We just shipped ", "I got this wrong: ", "Here’s what changed this month: "],
+    "proof": ["The number is ", "A customer put it better: ", "Before, ", "Nothing yet"],
+}
+
+
+def _stat(page: dict, sid: str):
+    return next((s["value"] for s in page["stats"] if s["id"] == sid), None)
+
+
+def _seq(page: dict, sid: str):
+    return next((q for q in page["sequences"] if q["id"] == sid), None)
+
+
+def questions_for(page: dict) -> list[dict]:
+    """The five, with the options this channel can actually offer."""
+    nouns, out = page["nouns"], []
+    for q in _QUESTIONS:
+        opts = _STARTERS.get(q["key"], [])
+        if q["key"] == "audience":
+            listed = _stat(page, "list")
+            first = _seq(page, "welcome") or _seq(page, "optin")
+            quiet = _seq(page, "winback") or _seq(page, "renew")
+            opts = [
+                f"Everyone — {listed} on the {nouns['audience_word']}" if listed else "Everyone",
+                f"New this month — {first['audience']}" if first else "New this month",
+                f"Gone quiet — {quiet['audience']}" if quiet else "The ones who went quiet",
+            ]
+        elif q["key"] == "ask":
+            opts = ["Reply with one word", "Book a call", "Start the free month",
+                    "Nothing — just read it"]
+        elif q["key"] == "when":
+            opts = ["Tuesday, 9am", "Tomorrow, 8am", "Hold it until I say"]
+        out.append({**q, "options": opts})
+    return out
+
+
+def ack_for(key: str, answer: str) -> str:
+    a = (answer or "").lower()
+    if key == "audience":
+        return f"{answer}. Good — that changes how blunt I can be."
+    if key == "point":
+        return "That’s the spine of it. Everything else hangs off that line."
+    if key == "proof":
+        if a.startswith("nothing"):
+            return "Then we say it plain. A claim with no proof reads better naked than dressed up."
+        return "Good. That goes right under the opening line, before anyone decides to stop reading."
+    if key == "ask":
+        if a.startswith("reply"):
+            return "One-word replies are where your replies actually come from. That goes at the end."
+        return f"“{answer}” it is — once, at the end, not three times through."
+    return "Right. Give me a moment and I’ll write it."
+
+
+# thoughts nobody has started yet — craft, not claims about the business
+_UNPURSUED = [
+    {"id": "i-split", "label": "Split the list by what they open", "state": "idea",
+     "note": "One list is one guess. Two lists are two guesses you can check.",
+     "moves": [{"id": "i-split-1", "label": "Openers of the last three"},
+               {"id": "i-split-2", "label": "Everyone else"}],
+     "seed": "The people who open everything should hear something different from the "
+             "people who never do."},
+    {"id": "i-plain", "label": "A plain one, from you", "state": "idea",
+     "note": "No header, no template. The ones that read like a person get answered.",
+     "moves": [{"id": "i-plain-1", "label": "No template"},
+               {"id": "i-plain-2", "label": "Signed by you"}],
+     "seed": ""},
+    {"id": "i-one", "label": "Ask the quiet ones one question", "state": "idea",
+     "note": "Not a campaign — a question. The answers are worth more than the opens.",
+     "moves": [{"id": "i-one-1", "label": "One line, one question"}],
+     "seed": "I want to know why you stopped opening these."},
+]
+
+
+def ideas_for(page: dict) -> list[dict]:
+    """What this channel is doing, as thoughts — then what it isn't."""
+    out = []
+    nxt = next((c for c in page["campaigns"] if c["state"] != "sent"), None)
+    if nxt:
+        out.append({
+            "id": "i-next", "label": f"The next {page['nouns']['one']}", "state": "draft",
+            "note": f"{nxt['subject']} — {nxt['when']}, to {nxt['audience'].lower()}",
+            "moves": [{"id": "i-next-when", "label": nxt["when"]},
+                      {"id": "i-next-who", "label": nxt["audience"]}],
+            "seed": nxt["subject"], "work": page.get("awaiting"),
+        })
+    for q in page["sequences"]:
+        out.append({
+            "id": f"i-{q['id']}", "label": q["name"],
+            "note": f"{q['trigger']} · {q['stat']}",
+            "state": "live" if q["state"] == "live" else "draft",
+            "moves": [{"id": f"i-{q['id']}-t", "label": q["trigger"]},
+                      {"id": f"i-{q['id']}-a", "label": q["audience"]}],
+            "seed": "",
+        })
+    if page.get("progress"):
+        p = page["progress"]
+        out.append({
+            "id": "i-warm", "label": p["label"], "state": "live",
+            "note": f"{p['value']} of {p['of']} · {p['note']}",
+            "moves": [{"id": "i-warm-1", "label": f"{p['value']} of {p['of']}"}],
+            "seed": "",
+        })
+    return out + _UNPURSUED
+
+
+def _strip(text: str) -> str:
+    return " ".join((text or "").split()).rstrip(".…")
+
+
+def _first_clause(text: str) -> str:
+    cut = re.split(r"\s*[—–,;:]\s*", _strip(text))[0]
+    return cut if len(cut) >= 12 else _strip(text)
+
+
+def _ask_line(ask: str):
+    a = (ask or "").lower()
+    if a.startswith("reply"):
+        return ("If that’s you, say so — one word is enough.",
+                "P.S. — reply with one word and I’ll know it landed.")
+    if a.startswith("book"):
+        return ("If it’s worth twenty minutes, book a time and we’ll talk it through.", None)
+    if a.startswith("start"):
+        return ("The first month is free, if you want to see it on your own work.", None)
+    return ("Nothing to do with this one. It’s just worth knowing.", None)
+
+
+def compose(page: dict, answers: dict) -> dict:
+    """Turn five answers into something readable.
+
+    Every claim in the result is a sentence the founder typed; this only
+    decides order, framing and what goes in the subject line. Swap this for
+    a generator and the response shape stays exactly the same.
+    """
+    point = _strip(answers.get("point") or "")
+    proof = _strip(answers.get("proof") or "")
+    has_proof = bool(proof) and not proof.lower().startswith("nothing")
+    close, ps = _ask_line(answers.get("ask") or "")
+
+    subjects, seen = [], set()
+    for s in (point, _first_clause(point), proof if has_proof else ""):
+        if s and s not in seen:
+            seen.add(s)
+            subjects.append(s)
+
+    return {
+        "subjects": subjects[:3],
+        "preview": proof if has_proof else _first_clause(point),
+        "body": [s for s in (point, proof if has_proof else "", close) if s],
+        "ps": ps,
+        "audience": answers.get("audience") or f"Everyone on the {page['nouns']['audience_word']}",
+        "when": answers.get("when") or "Hold it until I say",
+        # the standing rules are what this channel has learned about itself
+        "rules": page["notes"],
+        "next": [
+            "Your brand expert reads it before anyone else does.",
+            "It comes back to you with whatever they changed, marked.",
+            f"Nothing {'sends' if page['id'] == 'email' else 'goes out'} until you approve it.",
+        ],
+    }
+
+
+_created = 0
+
+
+def add_campaign(page: dict, draft: dict, subject=None) -> dict:
+    """Queue one. In-memory on purpose — the contract is the point."""
+    global _created
+    _created += 1
+    row = {
+        "id": f"{page['id']}-new-{_created}",
+        "subject": subject or (draft["subjects"][0] if draft["subjects"] else "Untitled"),
+        "when": draft["when"], "audience": draft["audience"],
+        "sent": 0, "open_rate": 0.0, "replies": 0, "state": "draft",
+        "body": draft["body"], "ps": draft["ps"],
+        "outcome": "queued for review — nothing goes out until you approve it",
+    }
+    page["campaigns"].insert(0, row)
+    return row
