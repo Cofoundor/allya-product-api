@@ -115,6 +115,10 @@ class WorkItem(Base):
     title: Optional[str] = None
     meta: Optional[str] = None
     undoable: bool = False
+    # who this is about. "CRM cleanup — merging 41 stale leads" is a claim
+    # about 41 records, and it should be openable rather than only readable.
+    person_id: Optional[str] = None
+    segment_id: Optional[str] = None
 
 
 class WorkSummary(Base):
@@ -204,6 +208,8 @@ class Fact(Base):
     flagged: bool = False
     mismatch: bool = False
     source: str = "observed"
+    # the person this is a fact about, when it's about one
+    person_id: Optional[str] = None
 
 
 class FactList(Base):
@@ -252,6 +258,9 @@ class CalendarEvent(Base):
     pill: Optional[str] = None
     # the work item this sits on, when there is one
     work_id: Optional[str] = None
+    # who it's with. "Pipeline review — the 7 worth a call" is a meeting
+    # about seven people, and the grid should be able to open them.
+    person_ids: list[str] = []
 
 
 class CalendarDay(Base):
@@ -375,6 +384,9 @@ class InstrumentItem(Base):
     value: float = 0.0
     state: str = ""
     meta: str = ""
+    # who this dot is, when it stands for people rather than work. What makes
+    # a band on the funnel something you can open instead of only look at.
+    person_ids: list[str] = []
 
 
 class Instrument(Base):
@@ -413,7 +425,11 @@ class Send(Base):
     id: str
     subject: str
     when: str
+    # how the campaign says it out loud: "Signups who never opened"
     audience: str
+    # what that sentence resolves to. The audience stays prose because that's
+    # how a founder thinks about it; this is who actually gets the thing.
+    segment_id: Optional[str] = None
     sent: int
     open_rate: float
     replies: int
@@ -489,6 +505,7 @@ class Sequence(Base):
     trigger: str
     state: Literal["live", "off", "draft"]
     audience: str
+    segment_id: Optional[str] = None
     stat: str
 
 
@@ -508,6 +525,8 @@ class ChannelUi(Base):
     brain_subtitle: str
     back_label: str
     back_href: str
+    # the lenses this page can be looked at through, when it has more than one
+    views: list["ViewOption"] = []
 
 
 class EmailPage(Base):
@@ -585,8 +604,21 @@ class Idea(Base):
 
 
 class Move(Base):
+    """Something you could do next.
+
+    On a brain it's a thought. On a person it's a control: `does` says who
+    can take it — an agent, an expert, or you — and taking it makes a real
+    work item or a real follow-up. A move nobody can take is a label, and a
+    page full of labels is a dashboard."""
+
     id: str
     label: str
+    # empty on a brain thought; on a person, who's able to take this
+    does: list[str] = []
+    # how it would read in the work list once dispatched
+    work_title: str = ""
+    # what it would say on a follow-up you keep for yourself
+    own_title: str = ""
 
 
 # ---- the gate ----------------------------------------------------------
@@ -670,8 +702,13 @@ class Pipeline(Base):
     person_kind: PersonKind
     surface_id: str
     geometry: Literal["funnel", "ladder", "radar"]
-    # what a number on this pipeline means: "people", "₹", "days since contact"
+    # what the geometry measures — the axis, not the tally: "people", "₹",
+    # "days since contact"
     unit: str
+    # what one row in a stage is called. Not the same thing: the press radar
+    # is measured in days and counted in people, and the money funnel is
+    # measured in ₹ and counted in deals.
+    count_noun: str = "people"
     stages: list[Stage]
     counts: dict[str, int] = {}
     # money in the open stages, when the pipeline carries money at all
@@ -754,6 +791,106 @@ class Journey(Base):
     note: str = ""
 
 
+# where someone came from, at the grain a founder actually decides on. Not
+# "the site" — which post, which campaign, whose referral.
+Channel = Literal["site", "email", "whatsapp", "press", "social", "referral",
+                  "job-boards", "csv", "direct"]
+
+
+class TouchPoint(Base):
+    """One end of the path in. `said` is the answer to "where did they come
+    from" written out — "The SurferSearcher post" — because a channel id
+    isn't an answer anybody wants."""
+
+    at: int
+    channel: Channel
+    said: str
+    campaign_id: Optional[str] = None
+    direction_id: Optional[str] = None
+    surface_id: Optional[str] = None
+
+
+class Attribution(Base):
+    """What brought them, what was in front of them when they moved, and
+    everything in between.
+
+    First touch answers "where do leads come from". Last touch answers the
+    more expensive question — what actually closes them. Keeping both is the
+    whole point: the channel that fills the top of the funnel is very often
+    not the one that fills the bottom."""
+
+    first: Optional[TouchPoint] = None
+    last: Optional[TouchPoint] = None
+    path: list[TouchPoint] = []
+    converted_at: Optional[int] = None
+    days_to_convert: Optional[int] = None
+    # said plainly under the record: "Came from the SurferSearcher post,
+    # closed after the pricing memo — 19 days."
+    note: str = ""
+
+
+class Followup(Base):
+    """Something owed, and when by.
+
+    A contact list tells you who exists. A CRM tells you who you owe
+    something to today — which needs a date, and needs to go overdue."""
+
+    id: str
+    person_id: str
+    what: str
+    # YYYY-MM-DD
+    due: str
+    by: TouchBy
+    state: Literal["open", "done", "snoozed"] = "open"
+    created: str = ""
+    # the work item this is waiting behind, when it was dispatched
+    work_id: Optional[str] = None
+
+
+class Prompt(Base):
+    """One thing worth doing now, and the move that does it.
+
+    A founder opening a book of a hundred strangers doesn't need a report,
+    they need a decision. This is the shortest honest answer to "what do I
+    do?" — who, why now, and one button. Never more than a few: a list of
+    twenty priorities is a list of none."""
+
+    id: str
+    person_id: Optional[str] = None
+    # who it's about, said the way the card shows it
+    name: str = ""
+    # why this one, in her voice — "Read the pricing page four times"
+    why: str
+    move_id: Optional[str] = None
+    move_label: str = ""
+    does: list[str] = []
+    urgency: Literal["late", "today", "soon", "idea"] = "soon"
+
+
+class OriginStat(Base):
+    """One door in, and what came through it. `rate` is the number a founder
+    decides on — the channel that brings the most is routinely not the one
+    that converts, and a flat source count can't say so."""
+
+    id: str
+    said: str
+    count: int
+    worth: int
+    paying: int
+    rate: float
+
+
+class FollowupIn(Base):
+    what: str = Field(min_length=1, max_length=400)
+    due: Optional[str] = None
+    by: TouchBy = "you"
+
+
+class FollowupPatch(Base):
+    state: Optional[Literal["open", "done", "snoozed"]] = None
+    due: Optional[str] = None
+
+
 class Person(Base):
     """One human, whatever they are to you. A journalist and a lead and a
     candidate are the same record with a different kind — which is what lets
@@ -779,6 +916,14 @@ class Person(Base):
     last_touch_at: Optional[int] = None
     # Allya's one-line read, in her voice. Not a field the founder fills in.
     note: str = ""
+    # what brought them, short enough for a row: "The SurferSearcher post"
+    origin_said: str = ""
+    origin_channel: Optional[Channel] = None
+    # what's owed and when — derived from the open follow-ups, so a list can
+    # be sorted by who's actually overdue without reading each record
+    next_step: Optional[str] = None
+    next_due: Optional[str] = None
+    overdue: bool = False
 
 
 class PersonDetail(Person):
@@ -791,10 +936,141 @@ class PersonDetail(Person):
     segments: list[str] = []
     facts: list[str] = []
     next: list[Move] = []
+    attribution: Attribution = Attribution()
+    followups: list[Followup] = []
+
+
+class MoveIn(Base):
+    """Taking a move. `by` is the fork the whole thing turns on: hand it to
+    an agent, hand it to an expert, or keep it."""
+
+    by: TouchBy = "agent"
+    due: Optional[str] = None
+
+
+class MoveResult(Base):
+    # what landed in the work list, when it was dispatched
+    work: Optional[WorkItem] = None
+    # what landed on your plate, when you kept it
+    followup: Optional[Followup] = None
+    touch: Touch
+    toast: str
+
+
+class PersonRow(Person):
+    """A person as a row in the grid.
+
+    The record on its own doesn't carry what a column needs — a company's
+    name, what's on the table, how many times anyone has spoken to them.
+    Joining that per row in the client would be a request each; deriving it
+    here is one pass over memory, and it's what lets the table show every
+    column a CRM tracks without opening anybody."""
+
+    company_name: str = ""
+    company_size: str = ""
+    company_industry: str = ""
+    # what they appear to be after, and the evidence that says so. An
+    # inference, which is why it never travels without its reason.
+    intent: str = ""
+    intent_why: str = ""
+    # money still open against them, across every deal
+    open_value: int = 0
+    deal_count: int = 0
+    segment_labels: list[str] = []
+    touch_count: int = 0
+    # the most recent thing that happened, in its own words
+    last_said: str = ""
+    days_in_stage: Optional[int] = None
+    # who owes the next step, when something is owed
+    next_by: Optional[TouchBy] = None
+
+
+class ViewOption(Base):
+    """One lens on the book. The page draws a switch from these rather than
+    naming the views itself."""
+
+    id: str
+    label: str
+    note: str
+
+
+class TableColumn(Base):
+    """One column the grid can show.
+
+    `key` names the field on a person row, which is what lets the client
+    render a column it has never heard of: add one here and the grid shows
+    it. Width is deliberately absent — how wide a column sits on a screen is
+    the client's business, not the contract's."""
+
+    key: str
+    label: str
+    # what it's for, so the picker can group two dozen of them
+    group: str
+    # in the default set
+    on: bool = False
+    # right-aligned and sorted numerically
+    num: bool = False
+    # allowed to wrap
+    wide: bool = False
+
+
+class TablePreset(Base):
+    """A named set of columns. Nobody's first question is which of twenty-five
+    columns they want; these are the answers. Per-user saved views replace
+    this list without the client changing."""
+
+    id: str
+    label: str
+    note: str
+    keys: list[str]
+
+
+class TableSpec(Base):
+    columns: list[TableColumn]
+    presets: list[TablePreset]
+    # the order the picker groups columns in
+    groups: list[str]
+
+
+class WarmthWord(Base):
+    id: Warmth
+    # how the UI says it in a column: "this week", "gone quiet"
+    said: str
+    # the same fact with room to breathe, for a record rather than a cell:
+    # "spoken to this week". Two phrasings because the screens differ, one
+    # owner because the vocabulary shouldn't.
+    said_full: str
+    # warmest first — the client sorts by this rather than inventing an order
+    rank: int
+
+
+class DispatchWord(Base):
+    """The three ways a move gets taken, said the way the button says it."""
+
+    id: TouchBy
+    verb: str
+    note: str
+
+
+class Lexicon(Base):
+    """The words the interface puts on this API's enums.
+
+    Every one of these used to be a constant in a component — three different
+    spellings of the warmth words across three files, because nothing owned
+    them. The vocabulary belongs with the values it describes."""
+
+    warmth: list[WarmthWord]
+    # touch kind -> the word a journey entry reads with
+    touch_kinds: dict[str, str]
+    # how urgent a prompt is -> what the card says
+    urgency: dict[str, str]
+    dispatch: list[DispatchWord]
+    # surface id -> the human who covers it, in Allya's words
+    experts: dict[str, str]
 
 
 class PersonList(Base):
-    people: list[Person]
+    people: list[PersonRow]
     total: int
     cursor: Optional[str] = None
     # what the filter narrowed to, said plainly above the list
@@ -855,6 +1131,10 @@ class SegmentRule(Base):
     """A segment said as a filter rather than a sentence. Empty lists mean
     'don't narrow on this', so an all-empty rule is everyone."""
 
+    # a hand-picked list rather than a rule. Every CRM has both, and they
+    # answer different questions: a rule stays true as people move, a list
+    # stays exactly who you chose. Set this and nothing else applies.
+    person_ids: list[str] = []
     kinds: list[PersonKind] = []
     stage_ids: list[str] = []
     warmth: list[Warmth] = []

@@ -191,16 +191,33 @@ def _branch(service: str, branches: list[tuple[str, str, str, list[tuple[str, st
     ]
     for i, (bid, label, short, leaves) in enumerate(branches):
         tint = TINTS[i % len(TINTS)]
-        nodes.append(_node(bid, label, 2, tint, service, short=short, hidden=True))
+        into = LAUNCH_INTO.get(bid)
+        nodes.append(_node(bid, label, 2, tint, service, short=short, hidden=True,
+                           **({"surface": into} if into else {})))
         for lid, ltext in leaves:
             work = lid if lid in WORK_IDS else None
-            nodes.append(_node(lid, ltext, 3, tint, bid, hidden=True, work=work))
+            leaf_into = LAUNCH_INTO.get(lid)
+            nodes.append(_node(lid, ltext, 3, tint, bid, hidden=True, work=work,
+                               **({"surface": leaf_into} if leaf_into else {})))
     return nodes
+
+
+# Branches and leaves that are doors rather than thoughts. A dot with a
+# `surface` is somewhere the camera flies into; everything else opens where
+# it sits. Sales' pipeline is the floor's entrance to the people layer —
+# "7 warm leads to call" is a real seven, and tapping it should show them.
+LAUNCH_INTO = {
+    "sa_pipe": "crm",
+    "leads": "crm",
+    "crm": "crm",
+    "winback": "crm",
+    "sa_quiet": "crm",
+}
 
 
 # work ids referenced from brain leaves, declared before _branch runs
 WORK_IDS = {
-    "newsletter", "reel", "shorts", "warmup", "hero", "listening", "linkedin", "retarget",
+    "newsletter", "reel", "shorts", "warmup", "hero", "listening", "li_pivot", "retarget",
     "shortlist", "screening", "jd-posted",
     "presslist", "pitch", "coverage",
     "leads", "crm", "winback",
@@ -223,7 +240,6 @@ MARKETING_BRANCHES = [
         ("ct_faq", "Turn support replies into FAQs"),
     ]),
     ("social", "Social", "Social", [
-        ("linkedin", "LinkedIn: the pivot lesson"),
         ("reel", "Reel: the day-one story"),
         ("so_reply", "Reply to 10 founders a day"),
         ("so_ugly", "Post the ugly first draft"),
@@ -269,6 +285,15 @@ MARKETING_BRANCHES = [
         ("wa_tier", "280 numbers off the 10k tier"),
         ("wa_quality", "Quality back to green"),
         ("wa_quiet", "Ask the quiet 30-day list one question"),
+    ]),
+    # LinkedIn is a branch rather than a thought under Social because it is a
+    # room you fly into: the dot's id matches a direction, which is what makes
+    # the camera dive instead of opening a panel.
+    ("linkedin", "LinkedIn", "LinkedIn", [
+        ("li_pivot", "LinkedIn: the pivot lesson"),
+        ("li_page", "The page repeats you — reshare instead"),
+        ("li_fold", "Your best lines are below the fold"),
+        ("li_cadence", "Six days quiet is where the replies died"),
     ]),
 ]
 
@@ -481,7 +506,7 @@ WORK: list[dict] = [
        meta="expert · brand expert on the final pass"),
     _w("listening", "marketing", "running", "agent", title="Watching 3 competitor launches for openings",
        meta="agent · nothing worth waking you for yet"),
-    _w("linkedin", "marketing", "shipped", "agent", title="LinkedIn post shipped — the pivot lesson",
+    _w("li_pivot", "marketing", "shipped", "agent", title="LinkedIn post shipped — the pivot lesson",
        meta="7:05am · 1.4k views, 11 replies, 2 demo asks"),
     _w("retarget", "marketing", "shipped", "agent",
        title="Retargeting audience rebuilt — 1,900 pricing-page visitors",
@@ -895,7 +920,7 @@ CALENDAR: list[dict] = [
     _ce("c-allhands", "workspace", 3, "16:30", 990, "All-hands — the pivot, said once", "meeting", dur=30),
     _ce("c-board", "workspace", 9, "10:00", 600, "Board update goes out", "ship", pill="drafted"),
 
-    _ce("cm-li", "marketing", 0, "07:05", 425, "LinkedIn post shipped — the pivot lesson", "ship", work="linkedin"),
+    _ce("cm-li", "marketing", 0, "07:05", 425, "LinkedIn post shipped — the pivot lesson", "ship", work="li_pivot"),
     _ce("cm-ret", "marketing", 0, "06:20", 380, "Retargeting audience rebuilt", "ship", work="retarget"),
     _ce("cm-news", "marketing", 1, "09:00", 540, "Newsletter — the SurferSearcher angle", "ship",
         "expert", "waiting on you", "newsletter"),
@@ -1551,7 +1576,142 @@ WHATSAPP_PAGE = {
     "work_ids": [],
 }
 
-DIRECTIONS: dict[str, dict] = {"email": EMAIL_PAGE, "whatsapp": WHATSAPP_PAGE}
+# The same shape again, and the first channel that publishes by itself. What
+# makes LinkedIn different from the other two is that it has two authors: the
+# founder's own profile and the company page. Everything on this page that
+# looks unusual — the health block about a token, the reshare in the notes —
+# comes from that one fact.
+
+LINKEDIN_PAGE = {
+    "id": "linkedin",
+    "surface_id": "marketing",
+    "label": "LinkedIn",
+    "blurb": "Where founders are already read. Your profile gets the replies; the page gets the credibility. Neither works if you post like a brand.",
+    "stats": [
+        {"id": "list", "value": "1,240", "label": "follow you", "delta": "+86 this month"},
+        {"id": "open", "value": "31%", "label": "of your followers saw the last one", "delta": "+6 vs the one before"},
+        {"id": "reply", "value": "23", "label": "commented", "delta": "5 became conversations"},
+        {"id": "unsub", "value": "1", "label": "unfollowed", "delta": None},
+        {"id": "posts", "value": "6", "label": "posts this month", "delta": "1 held"},
+        {"id": "page", "value": "312", "label": "follow the page", "delta": "+11 — it grows off your posts"},
+    ],
+    "progress": {
+        "label": "Days until LinkedIn needs reconnecting",
+        "value": 47,
+        "of": 60,
+        "note": "one click when it runs out · anything held goes out after you reconnect",
+    },
+    "awaiting": None,
+    "campaigns": [
+        {"id": "li-next", "subject": "We were wrong about who this was for.",
+         "when": "Wednesday 7am", "audience": "You, then the page 85 min later", "sent": 0, "open_rate": 0, "replies": 0,
+         "state": "scheduled",
+         "body": [
+             "We built this for agencies. Agencies did not want it. Founders did, and they wanted the boring half — the invoices, the JD, the press list.",
+             "Nine months of building the wrong thing, and the thing that saved us was one customer answering a question honestly.",
+         ],
+         "ps": "What did you get wrong that turned out to be the useful part?",
+         "outcome": "held — you can pull it back until 6:50am"},
+        {"id": "li1", "subject": "13 campaigns in a month. Two of them were bad.",
+         "when": "last Wednesday", "audience": "You, then the page", "sent": 1240, "open_rate": 0.31, "replies": 23,
+         "state": "sent",
+         "body": [
+             "An agency quoted ₹80,000 a month and two weeks a campaign. We ran 13 in the first month.",
+             "Two were bad and one went out with the wrong subject line. That is the part nobody posts about.",
+         ],
+         "ps": "Happy to show anyone the actual numbers.",
+         "outcome": "31% of followers saw it · 23 comments · 5 became conversations"},
+        {"id": "li2", "subject": "₹2,000 a month. That is the whole pricing page.",
+         "when": "10 days ago", "audience": "You only", "sent": 1180, "open_rate": 0.27, "replies": 14,
+         "state": "sent",
+         "body": [
+             "Less than one freelancer's invoice for one landing page.",
+             "The interesting question is not the price. It is what a founder stops paying for.",
+         ],
+         "ps": None,
+         "outcome": "27% seen · 14 comments"},
+        {"id": "li3", "subject": "Excited to announce our AI-powered operations platform!",
+         "when": "3 weeks ago", "audience": "The page only", "sent": 298, "open_rate": 0.09, "replies": 0,
+         "state": "sent",
+         "body": [
+             "We are thrilled to announce the launch of our AI-powered operations platform, built to streamline your workflows end to end. #AI #startup #innovation",
+         ],
+         "ps": None,
+         "outcome": "9% seen · 0 comments — your worst post, and the only one the page wrote alone"},
+        {"id": "li4", "subject": "28 tasks in 30 days. One founder. No hires.",
+         "when": "last month", "audience": "You, then the page", "sent": 1094, "open_rate": 0.34, "replies": 31,
+         "state": "sent",
+         "body": [
+             "Invoices chased. A JD posted. Six candidates screened. A press list rebuilt.",
+             "The list is boring on purpose. Boring is what was eating the week.",
+         ],
+         "ps": "Which of these is eating yours?",
+         "outcome": "34% seen · 31 comments — your best post"},
+    ],
+    "sequences": [
+        {"id": "reshare", "name": "The page carries your post", "trigger": "85 minutes after you post", "state": "live",
+         "audience": "every post you approve for both", "stat": "one call · no duplicate copy in the feed"},
+        {"id": "founder-first", "name": "Founder first", "trigger": "every post", "state": "live",
+         "audience": "your profile", "stat": "your posts reach 4x what the page reaches"},
+        {"id": "cadence", "name": "Twice a week", "trigger": "Tuesday and Thursday, 7am", "state": "draft",
+         "audience": "you", "stat": "waiting on your approval"},
+        {"id": "reply-hour", "name": "The hour after", "trigger": "60 minutes after a post goes out", "state": "draft",
+         "audience": "you", "stat": "replying in the first hour is most of the reach"},
+    ],
+    "notes": [
+        "Your profile reaches roughly four times what the page does. Post as you, let the page carry it.",
+        "The first 210 characters are the whole post — everything after that is behind “see more”.",
+        "The only post you have ever written from the page alone is also your worst.",
+        "Posts at 7am get read. Posts after 2pm do not.",
+        "Naming what went wrong outperforms naming what went right, every time.",
+    ],
+    "health": {
+        "title": "Whether you can still post at all",
+        "blurb": "LinkedIn hands out a credential that dies every 60 days, and a page role someone else can take away. Both are silent failures, so they live here.",
+        "scores": [
+            {"id": "profile", "label": "Your profile", "value": "Connected", "state": "good",
+             "note": "posts as you · this is where the replies come from"},
+            {"id": "page", "label": "The company page", "value": "Admin", "state": "good",
+             "note": "you administer it, so the page can post and reshare"},
+            {"id": "token", "label": "Credential", "value": "47 days", "state": "good",
+             "note": "LinkedIn expires it at 60 · you will be asked to reconnect at 50"},
+            {"id": "metrics", "label": "Numbers", "value": "Page only", "state": "watch",
+             "note": "LinkedIn will not let anyone read back how your own posts did — the page's are real"},
+        ],
+        "updates": [
+            "Reconnected 13 days ago. Nothing has been held since.",
+            "The page reshared your last two posts 85 minutes after each went out.",
+            "One post was held for ten minutes and went out on time.",
+        ],
+    },
+    "nouns": {
+        "one": "post", "many": "posts", "metric": "seen",
+        "automations": "habits", "audience_word": "followers",
+    },
+    "ui": {
+        "tint": "b2",
+        "floor_label": "Marketing",
+        "floor_href": "/marketing",
+        "placeholder": "Direct Allya — what should this post say?",
+        "suggestions": [
+            "Write the pivot lesson",
+            "Something that went wrong this week",
+            "Post as me, let the page carry it",
+        ],
+        "know_title": "What I know about your LinkedIn",
+        "brain_title": "The brain · linkedin",
+        "brain_subtitle": "touch a thought",
+        "back_label": "Back to marketing",
+        "back_href": "/marketing",
+    },
+    "work_ids": ["li_pivot"],
+}
+
+DIRECTIONS: dict[str, dict] = {
+    "email": EMAIL_PAGE,
+    "whatsapp": WHATSAPP_PAGE,
+    "linkedin": LINKEDIN_PAGE,
+}
 
 
 # ---- the gate ----------------------------------------------------------
@@ -1656,20 +1816,50 @@ def _seq(page: dict, sid: str):
     return next((q for q in page["sequences"] if q["id"] == sid), None)
 
 
+def audience_options(page: dict) -> list[str]:
+    """Who this campaign could go to, counted off the people book.
+
+    These used to be three sentences stitched from the channel's own stats,
+    which meant a founder picked an audience nobody could resolve. Now every
+    option is a segment with a live count behind it, so choosing one names
+    the actual recipients."""
+    import crm_query as _q
+
+    # some segments exist to be worked, not written to. A merge queue and a
+    # press list are both real groups of people and neither is an audience
+    # for a campaign — offering them is how a founder mails the wrong 41.
+    not_an_audience = {"sg-stale", "sg-press-list", "sg-press-warm", "sg-shortlist"}
+    # the order is by intent, not by size: the ones worth writing to first,
+    # the whole list last because it's almost never the right answer
+    by_intent = ["sg-last-week", "sg-talking", "sg-worth-a-call", "sg-never-opened",
+                 "sg-churned", "sg-agency", "sg-quiet", "sg-everyone-email"]
+    rank = {sid: i for i, sid in enumerate(by_intent)}
+
+    segs = [_q.segment_out(s) for s in SEGMENTS
+            if s["id"] not in not_an_audience and s["rule"].get("kinds") != ["journalist"]]
+    usable = sorted((s for s in segs if s["count"]), key=lambda s: rank.get(s["id"], 50))
+    opts = [f"{s['label']} — {s['count']} {'person' if s['count'] == 1 else 'people'}"
+            for s in usable[:4]]
+    return opts or [f"Everyone on the {page['nouns']['audience_word']}"]
+
+
+def segment_for_answer(answer: str) -> str | None:
+    """Which segment an answer named. The founder picked a sentence; this is
+    the id that sentence was made from."""
+    label = (answer or "").split(" — ")[0].strip().lower()
+    for s in SEGMENTS:
+        if s["label"].strip().lower() == label:
+            return s["id"]
+    return None
+
+
 def questions_for(page: dict) -> list[dict]:
     """The five, with the options this channel can actually offer."""
-    nouns, out = page["nouns"], []
+    out = []
     for q in _QUESTIONS:
         opts = _STARTERS.get(q["key"], [])
         if q["key"] == "audience":
-            listed = _stat(page, "list")
-            first = _seq(page, "welcome") or _seq(page, "optin")
-            quiet = _seq(page, "winback") or _seq(page, "renew")
-            opts = [
-                f"Everyone — {listed} on the {nouns['audience_word']}" if listed else "Everyone",
-                f"New this month — {first['audience']}" if first else "New this month",
-                f"Gone quiet — {quiet['audience']}" if quiet else "The ones who went quiet",
-            ]
+            opts = audience_options(page)
         elif q["key"] == "ask":
             opts = ["Reply with one word", "Book a call", "Start the free month",
                     "Nothing — just read it"]
@@ -1815,6 +2005,9 @@ def add_campaign(page: dict, draft: dict, subject=None) -> dict:
         "id": f"{page['id']}-new-{_created}",
         "subject": subject or (draft["subjects"][0] if draft["subjects"] else "Untitled"),
         "when": draft["when"], "audience": draft["audience"],
+        # the audience the founder picked was a segment before it was a
+        # sentence, so the campaign leaves here knowing who it's actually for
+        "segment_id": segment_for_answer(draft["audience"]),
         "sent": 0, "open_rate": 0.0, "replies": 0, "state": "draft",
         "body": draft["body"], "ps": draft["ps"],
         "outcome": "queued for review — nothing goes out until you approve it",
@@ -2038,6 +2231,21 @@ NEWSLETTERS_PAGE = {
 
 DIRECTIONS["newsletters"] = NEWSLETTERS_PAGE
 
+# the LinkedIn posts' clocks and click counts, same as the other channels'
+CAMPAIGN_FACTS.update({
+    "li-next": {"clicked": 0, "left": 0, "bad": 0,
+                "created": "6 Aug, 9:12pm", "scheduled": "12 Aug, 7:00am", "sent_on": None},
+    "li1": {"clicked": 96, "left": 1, "bad": 0,
+            "created": "4 Aug, 10:40pm", "scheduled": "5 Aug, 7:00am", "sent_on": "5 Aug, 7:00am"},
+    "li2": {"clicked": 61, "left": 0, "bad": 0,
+            "created": "27 Jul, 8:15pm", "scheduled": "28 Jul, 7:00am", "sent_on": "28 Jul, 7:01am"},
+    "li3": {"clicked": 4, "left": 2, "bad": 0,
+            "created": "17 Jul, 3:20pm", "scheduled": "17 Jul, 3:30pm", "sent_on": "17 Jul, 3:30pm"},
+    "li4": {"clicked": 118, "left": 0, "bad": 0,
+            "created": "8 Jul, 6:50am", "scheduled": "9 Jul, 7:00am", "sent_on": "9 Jul, 7:00am"},
+})
+
+
 CAMPAIGN_FACTS.update({
     "n-next": {"clicked": 0, "left": 0, "bad": 0,
                "created": "3 Aug, 7:20am", "scheduled": "13 Aug, 8:00am", "sent_on": None},
@@ -2048,3 +2256,86 @@ CAMPAIGN_FACTS.update({
     "n3": {"clicked": 3, "left": 3, "bad": 4,
            "created": "8 Apr, 2:15pm", "scheduled": "10 Apr, 12:00pm", "sent_on": "10 Apr, 12:00pm"},
 })
+
+
+# ---- the people layer --------------------------------------------------
+#
+# Seeded next door, because the book is long and this file is already the
+# longest thing in the repo. Re-exported here so every caller keeps reading
+# one module: data.PEOPLE sits beside data.WORK, and both are mutated in
+# place by the routes that change them.
+
+from crm_data import (  # noqa: E402
+    COMPANIES,
+    COMPANY_BY_ID,
+    LEXICON,
+    TABLE_COLUMNS,
+    TABLE_GROUPS,
+    TABLE_PRESETS,
+    CRM_BLURB,
+    CRM_NOTES,
+    CRM_NOUNS,
+    CRM_UI,
+    DEALS,
+    DEALS_SEED,
+    DOTS,
+    PEOPLE,
+    PEOPLE_SEED,
+    PIPELINES,
+    PIPELINE_BY_ID,
+    SEGMENTS,
+    SOURCES,
+    STAGE_AT,
+    STAGE_LABEL,
+    TOUCHES,
+    TOUCHES_SEED,
+    days_since,
+    warmth_of,
+)
+
+
+# ---- what the floors were already talking about ------------------------
+#
+# None of these claims are new. "40 signups enriched, 7 worth a call",
+# "merging 41 stale leads", "the 7 worth a call" on Thursday's grid — every
+# floor was already describing people it had no way to name. Stamping the ids
+# on is what turns those sentences from copy into something you can open.
+
+_WORK_PEOPLE = {
+    "leads": "sg-worth-a-call",
+    "crm": "sg-stale",
+    "winback": "sg-churned",
+    "presslist": "sg-press-list",
+    "pitch": "sg-press-warm",
+    "shortlist": "sg-shortlist",
+    "screening": "sg-shortlist",
+}
+for _w_row in WORK:
+    if _w_row["id"] in _WORK_PEOPLE:
+        _w_row["segment_id"] = _WORK_PEOPLE[_w_row["id"]]
+WORK_SEED = {w["id"]: dict(w) for w in WORK}
+
+# a fact about one person belongs on that person, not only in the feed
+_FACT_PEOPLE = {"s1": "p-surfer", "k7": "p-marg", "k6": "p-meridian"}
+for _f_row in FACTS:
+    if _f_row["id"] in _FACT_PEOPLE and _f_row["surface_id"] in ("sales", "workspace"):
+        _f_row["person_id"] = _FACT_PEOPLE[_f_row["id"]]
+
+# "Pipeline review — the 7 worth a call" is a meeting about seven people
+_EVENT_PEOPLE = {
+    "cs-pipe": DOTS.get("leads", []),
+    "c-invest": ["p-meridian"],
+}
+for _e_row in CALENDAR:
+    if _e_row["id"] in _EVENT_PEOPLE:
+        _e_row["person_ids"] = list(_EVENT_PEOPLE[_e_row["id"]])
+
+# a campaign's audience stays prose; the segment is who actually gets it
+_SEQ_SEGMENTS = {"welcome": "sg-last-week", "day3": "sg-last-week",
+                 "winback": "sg-churned", "optin": "sg-last-week"}
+for _page in DIRECTIONS.values():
+    for _seq in _page.get("sequences", []):
+        if _seq["id"] in _SEQ_SEGMENTS:
+            _seq["segment_id"] = _SEQ_SEGMENTS[_seq["id"]]
+    for _camp in _page.get("campaigns", []):
+        _camp.setdefault("segment_id", "sg-everyone-email")
