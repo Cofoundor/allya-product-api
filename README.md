@@ -56,6 +56,12 @@ All paths are under `/api/v1`. Field names are **camelCase on the wire**
 | GET | `/surfaces/{sid}` | `Surface` — greeting, placeholder, suggestions, brain header, node copy |
 | GET | `/surfaces/{sid}/brain` | `BrainGraph` — `{layout, anchorId, nodes[], links[]}` |
 | GET | `/surfaces/{sid}/work` | `WorkList` — `{items[], summary}` |
+| GET | `/brain` | `BrainPage` — the whole memory page: its words, its floors and counts, and the joined company view |
+| GET | `/brain/nodes/{nid}` | `BrainNodeDetail` — what one node is, what hangs off it, where it may be moved, and what may be said about it; **404** unknown |
+| GET | `/brain/search?q=` | `BrainSearch` — matches anywhere in the brain, each with the scope it opens in; **422** under 2 characters |
+| GET | `/brain/suggestions` | `BrainSuggestionList` — what the founder has asked her to change, newest first |
+| POST | `/brain/suggestions` | `BrainSuggestionAck` — body `{nodeId, kind, text?, toParent?, why?}`; **201**, **404** unknown node, **422** if the kind's payload is missing or the change is a no-op |
+| DELETE | `/brain/suggestions/{sgid}` | **204**; **409** once something has acted on it |
 | GET | `/surfaces/{sid}/schedule` | `Schedule` |
 | GET | `/surfaces/{sid}/calendar?month=` | `CalendarMonth` — one month of the grid; **422** if `month` isn't `YYYY-MM` |
 | GET | `/surfaces/{sid}/calendar/{date}` | `DayAgenda` — one day's entries; **422** if `date` isn't `YYYY-MM-DD` |
@@ -90,6 +96,48 @@ shipped, `422` on a malformed body, `month` or `date`.
 `surface_id` is one of `workspace`, `marketing`, `hiring`, `pr`, `sales`, `ops`.
 The workspace's `/work` and `/calendar` return every service's items; a service
 returns only its own.
+
+### `/brain` — the whole memory
+
+`product-next`'s `/brain` page draws nothing it invents, so five things that
+would otherwise be frontend logic are decided here:
+
+- **The join.** `GET /brain` returns the *company view*: the hub, its floors,
+  and the shape of each — a floor's directions, plus any thought that exists
+  only on the company ring. Not every thought in the company: the canvas lays
+  out a hub, its departments and their direct children, so a floor's leaves
+  cannot be placed in the same pass, and eighty labelled dots would be a
+  hairball nobody reads. You walk into a floor for its thoughts, and that is
+  the floor's own `GET /surfaces/{sid}/brain`, unchanged.
+- **Every string on the page**, in `copy`. Same reason every surface's words
+  come from the server: Allya's voice belongs in one place, and re-wording the
+  page shouldn't need a frontend deploy.
+- **What a node is.** `kindWord` is decided by where the node was found, not
+  by its tier — the company graph's tier 2 is a leaf thought while a floor's
+  tier 2 is a direction with thoughts under it, so reading the word off the
+  tier alone called "Own fast, not cheap" a direction.
+- **What may be said about it.** `verbs` is a rule about the graph: your
+  company is not a belief to be corrected, a floor can only be told something
+  under it is missing, and a direction or thought is fair game. `moveTargets`
+  is every place a thought could legally go — never inside itself, never where
+  it already is. Adding a fifth verb is a backend change alone.
+- **Where a match lives.** `/brain/search` answers with the `scope` the client
+  must be in to open each hit, because whether a node is reachable on the ring
+  or only inside its floor is a fact about the join.
+
+`nodeId` on a suggestion is the thought itself for `reword` / `remove` /
+`move`, and the **parent** the new thought should hang under for `add`.
+`surfaceId`, `nodeLabel`, `kindWord`, `summary` and `stateWord` are the
+server's, so the drawer maps nothing; `POST` answers with a `toast` in her
+words rather than the client's.
+
+**Nothing is applied.** A suggestion is stored `pending` and the graph does not
+move — deciding what a correction should do to the graph is the real work, and
+it belongs behind a model, not in a dummy. `applied` and `declined` exist in
+the contract so the client can render them; nothing here produces them yet.
+`BRAIN_SUGGESTIONS` in `data.py` is seeded empty on purpose: everything else in
+that file is invented content, and these are supposed to be the founder's own
+words about their own company.
 
 ### The calendar
 

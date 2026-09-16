@@ -484,6 +484,124 @@ BRAINS: dict[str, dict] = {
 }
 
 
+# ---- /brain: the page's words, and the founder's corrections -----------
+#
+# Every string /brain draws lives here, for the same reason every other
+# surface's words do: the interface should be re-wordable without a frontend
+# deploy, and Allya's voice belongs in one place rather than in twelve
+# components.
+
+BRAIN_COPY: dict = {
+    "title": "The brain",
+    "held_noun": "things she holds",
+    "ring_title": "The whole company",
+    "ring_subtitle": "the shape of it — open a floor for its thoughts",
+    "floor_subtitle": "every thought on this floor",
+    "back_label": "Back to the whole company",
+    "hint": "Drag a dot and it moves. Tap one and she tells you what she thinks it is.",
+    "search_placeholder": "Find a thought…",
+    "search_empty": "Nothing by that name.",
+    "rail_title": "Where you are",
+    "rail_note": (
+        "Every floor of the brain, without leaving the brain. Tap a dot to open what she "
+        "believes; tell her when it’s wrong."
+    ),
+    "ring_label": "The whole company",
+    "inspector_empty_title": "Nothing open",
+    "inspector_empty": (
+        "Tap any dot to see what Allya believes about it — and to tell her when she has "
+        "it wrong."
+    ),
+    "verbs_title": "Tell her",
+    "verbs_note": "Nothing changes on its own — she folds it in, and you see it here first.",
+    "why_label": "Why",
+    "send_label": "Tell Allya",
+    "sending_label": "Sending…",
+    "cancel_label": "Never mind",
+    "pending_note": (
+        "You’ve already said something about this one — it’s in the list below."
+    ),
+    "drawer_title": "What you’ve told her",
+    "drawer_empty": (
+        "Nothing yet. Open a thought and tell her what she has wrong — it’s the "
+        "fastest way to make everything she does next sharper."
+    ),
+    "withdraw_label": "take it back",
+    "offline": "Couldn’t reach the brain.",
+    "retry": "Try again",
+    "loading": "Reading the brain…",
+    "send_failed": "That didn’t reach Allya. Try again?",
+    "withdraw_failed": "Couldn’t take that back.",
+}
+
+# What a node IS, in the founder's words. Keyed by kind rather than by tier,
+# because the two do not line up: on the company graph tier 2 is a leaf
+# thought, while on a floor tier 2 is a direction with thoughts under it.
+KIND_WORDS = {
+    "company": "your company",
+    "department": "a floor of the brain",
+    "direction": "a direction",
+    "thought": "a thought",
+}
+
+NODE_NOTES = {
+    "work": "She has work running against this one.",
+    "provisional": (
+        "A placeholder, until this floor’s setup fills it in. She isn’t leaning on "
+        "it yet."
+    ),
+    "explore": "Walk this floor →",
+}
+
+# the four things you can say, and the words for saying them
+VERBS: dict[str, dict] = {
+    "reword": {
+        "kind": "reword", "label": "Reword it", "hint": "she has the idea, not the words",
+        "field_label": "What it should say", "why_placeholder": "what she got wrong",
+    },
+    "move": {
+        "kind": "move", "label": "Move it", "hint": "it belongs under something else",
+        "field_label": "Where it belongs", "placeholder": "Choose a place…",
+        "why_placeholder": "what she got wrong",
+    },
+    "remove": {
+        "kind": "remove", "label": "It’s not true", "hint": "she should stop believing this",
+        "warn": (
+            "She’ll stop using this to decide anything. It stays on the record as "
+            "something you corrected."
+        ),
+        "why_placeholder": "we killed that after the pivot",
+    },
+    "add": {
+        "kind": "add", "label": "Add a thought", "hint": "something under here is missing",
+        "field_label": "The thought she’s missing",
+        "placeholder": "Say it the way you’d say it out loud",
+        "why_placeholder": "what she got wrong",
+    },
+}
+
+SUGGESTION_WORDS = {
+    "kind": {"reword": "reword", "move": "move", "remove": "not true", "add": "missing"},
+    "state": {
+        "pending": "waiting on Allya",
+        "applied": "folded in",
+        "declined": "she kept it, and said why",
+    },
+    "toast": {
+        "remove": "Noted — she’ll stop leaning on that.",
+        "add": "Noted. She’ll fold that in.",
+        "reword": "Noted.",
+        "move": "Noted.",
+    },
+}
+
+# Empty on purpose. Every other list in here is seeded so the UI has something
+# to draw; this one is the founder's own words about their own company, and
+# inventing three of those would put sentences they never said in front of
+# them on first load.
+BRAIN_SUGGESTIONS: list[dict] = []
+
+
 # ---- work --------------------------------------------------------------
 
 def _w(wid, sid, status, origin, **kw):

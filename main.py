@@ -98,12 +98,16 @@ def get_surface(sid: str):
     return m.Surface(**s, onboarded=done, lock=None if done else data.LOCKS.get(sid))
 
 
-@app.get(f"{V1}/surfaces/{{sid}}/brain", response_model=m.BrainGraph)
-def get_brain(sid: str):
-    _surface(sid)
+def _graph(sid: str) -> dict:
+    """A surface's graph as anyone may read it.
+
+    Extracted so /brain builds its joined view out of exactly what a floor
+    would draw on its own page — a whole-brain count that disagreed with the
+    floor you then walked into would be worse than no count at all.
+    """
     graph = data.BRAINS[sid]
     if data.ONBOARDED.get(sid, True):
-        return m.BrainGraph(**graph)
+        return graph
     # semi-complete: the floor's shape is there, but what hangs off it is only
     # what live work already proves. The rest arrives with the onboarding.
     kept = []
@@ -114,7 +118,296 @@ def get_brain(sid: str):
             kept.append(n)
     ids = {n["id"] for n in kept}
     links = [l for l in graph["links"] if l[0] in ids and l[1] in ids]
-    return m.BrainGraph(**{**graph, "nodes": kept, "links": links})
+    return {**graph, "nodes": kept, "links": links}
+
+
+@app.get(f"{V1}/surfaces/{{sid}}/brain", response_model=m.BrainGraph)
+def get_brain(sid: str):
+    _surface(sid)
+    return m.BrainGraph(**_graph(sid))
+
+
+# ---- /brain: the whole memory, walked and corrected --------------------
+#
+# The page draws nothing it invents. The joined graph, the words on it, what a
+# node is, where a thought may be moved to and what may be said about it are
+# all decided here, so the frontend stays a renderer.
+
+def _index() -> dict[str, dict]:
+    """Every node in the brain, by id, with the floor it really belongs to.
+
+    A thought appears twice — once on the company ring and once under its
+    direction on its floor — and the deeper placement is the true one.
+    """
+    out: dict[str, dict] = {}
+    for sid in data.BRAINS:
+        for n in _graph(sid)["nodes"]:
+            prev = out.get(n["id"])
+            if prev and prev["node"]["tier"] >= n["tier"]:
+                continue
+            floor = None if n["tier"] == 0 else (n["group"] if sid == "workspace" else sid)
+            # a floor's tier 2 holds thoughts under it; the company ring's
+            # tier 2 IS a thought
+            kind = ("company", "department", "direction", "thought")[n["tier"]]
+            if n["tier"] == 2 and sid == "workspace":
+                kind = "thought"
+            out[n["id"]] = {
+                "node": n,
+                "floor": floor if floor in data.SURFACES else None,
+                "kind": kind,
+            }
+    return out
+
+
+def _ring() -> dict:
+    """The company view: the hub, its floors, and the SHAPE of each.
+
+    Not every thought in the company. The canvas lays out a hub, its
+    departments and their direct children, so a floor's leaves cannot be
+    placed in the same pass — and eighty labelled dots would be a hairball
+    nobody reads. You walk into a floor for its thoughts.
+    """
+    ws = _graph("workspace")
+    nodes: list[dict] = []
+    seen: set[str] = set()
+
+    def push(n: dict, tier: int):
+        if n["id"] in seen:
+            return
+        seen.add(n["id"])
+        # `hidden` is a floor page's growth animation, and `surface` is its
+        # way out to another route. This view draws everything at once and
+        # never leaves, so neither survives the join.
+        nodes.append({**n, "tier": tier, "surface": None, "hidden": False})
+
+    for n in ws["nodes"]:
+        if n["tier"] <= 1:
+            push(n, n["tier"])
+
+    for svc in [n for n in ws["nodes"] if n["tier"] == 1]:
+        floor = _graph(svc["id"])["nodes"]
+        on_floor = {n["id"] for n in floor}
+        for d in [n for n in floor if n["tier"] == 2 and n["parent"] == svc["id"]]:
+            push(d, 2)
+        # a thought that exists only on the ring would otherwise vanish from
+        # the product entirely, and it is still something she believes
+        for leaf in [n for n in ws["nodes"] if n["tier"] == 2 and n["parent"] == svc["id"]]:
+            if leaf["id"] not in on_floor:
+                push(leaf, 2)
+
+    ids = {n["id"] for n in nodes}
+    links: list[list[str]] = []
+    for sid in data.BRAINS:
+        for a, b in _graph(sid)["links"]:
+            if a in ids and b in ids and [a, b] not in links and [b, a] not in links:
+                links.append([a, b])
+    return {"surface_id": "brain", "layout": "web", "anchor_id": "co",
+            "nodes": nodes, "links": links}
+
+
+@app.get(f"{V1}/brain", response_model=m.BrainPage)
+def get_brain_page():
+    """Everything the page needs before you touch anything."""
+    ws = _graph("workspace")
+    floors = []
+    for svc in [n for n in ws["nodes"] if n["tier"] == 1]:
+        ns = _graph(svc["id"])["nodes"]
+        floors.append(m.BrainFloor(
+            id=svc["id"],
+            label=data.SURFACES[svc["id"]]["label"],
+            count=len([n for n in ns if n["tier"] in (2, 3)]),
+        ))
+    idx = _index()
+    return m.BrainPage(
+        copy=m.BrainCopy(**data.BRAIN_COPY),
+        floors=floors,
+        ring=m.BrainGraph(**_ring()),
+        held=len([k for k in idx.values() if k["node"]["tier"] >= 2]),
+    )
+
+
+def _brain_node(nid: str) -> dict:
+    hit = _index().get(nid)
+    if not hit:
+        raise HTTPException(404, f"no such thought '{nid}'")
+    return hit
+
+
+@app.get(f"{V1}/brain/nodes/{{nid}}", response_model=m.BrainNodeDetail)
+def get_brain_node(nid: str):
+    """What she believes about one node — and what you may say back.
+
+    Which verbs apply is a rule about the graph, so it is answered here: your
+    company is not a belief to be corrected, a floor can only be told that
+    something under it is missing, and everything below that is fair game.
+    """
+    idx = _index()
+    hit = idx.get(nid)
+    if not hit:
+        raise HTTPException(404, f"no such thought '{nid}'")
+    n, floor, kind = hit["node"], hit["floor"], hit["kind"]
+
+    kinds = (
+        []
+        if kind == "company"
+        else ["add"]
+        if kind == "department"
+        else ["reword", "move", "remove", "add"]
+    )
+    targets = []
+    if "move" in kinds:
+        def inside(cid: str) -> bool:
+            """never offer somewhere inside the thing being moved"""
+            cur, guard = cid, set()
+            while cur and cur not in guard:
+                if cur == nid:
+                    return True
+                guard.add(cur)
+                cur = (idx.get(cur) or {}).get("node", {}).get("parent")
+            return False
+
+        for k in idx.values():
+            c = k["node"]
+            # only somewhere that can hold a thought, and never where it is
+            if k["kind"] not in ("department", "direction"):
+                continue
+            if c["id"] in (nid, n.get("parent")) or inside(c["id"]):
+                continue
+            note = (
+                data.SURFACES[k["floor"]]["label"]
+                if k["floor"] and k["kind"] == "direction"
+                else None
+            )
+            targets.append(m.MoveTarget(id=c["id"], label=c["label"], note=note))
+        targets.sort(key=lambda t: t.label)
+        if not targets:
+            kinds.remove("move")
+
+    return m.BrainNodeDetail(
+        id=n["id"],
+        label=n["label"],
+        kind_word=data.KIND_WORDS[kind],
+        floor_id=floor if kind in ("direction", "thought") else None,
+        floor_label=(
+            data.SURFACES[floor]["label"]
+            if floor and kind in ("direction", "thought")
+            else None
+        ),
+        provisional_note=data.NODE_NOTES["provisional"] if n.get("provisional") else None,
+        work_note=data.NODE_NOTES["work"] if n.get("work") else None,
+        explore_label=data.NODE_NOTES["explore"] if kind == "department" else None,
+        children=[m.NodeRef(id=c["node"]["id"], label=c["node"]["label"])
+                  for c in idx.values() if c["node"].get("parent") == nid][:8],
+        move_targets=targets,
+        verbs=[m.Verb(**data.VERBS[k]) for k in kinds],
+    )
+
+
+@app.get(f"{V1}/brain/search", response_model=m.BrainSearch)
+def search_brain(q: Annotated[str, Query(min_length=2, max_length=80)], limit: int = 8):
+    """Find a thought anywhere, and say which scope it can be opened in.
+
+    Whether a node is reachable on the company ring or only inside its own
+    floor is a fact about the joined graph, so the client is told rather than
+    left to work it out.
+    """
+    ring = {n["id"] for n in _ring()["nodes"]}
+    needle = q.lower()
+    out = []
+    for k in _index().values():
+        n = k["node"]
+        if needle not in n["label"].lower():
+            continue
+        out.append(m.BrainMatch(
+            id=n["id"],
+            label=n["label"],
+            where=(data.SURFACES[k["floor"]]["label"]
+                   if k["floor"] and k["kind"] != "department" else "the company"),
+            scope="workspace" if n["id"] in ring else (k["floor"] or "workspace"),
+        ))
+    return m.BrainSearch(matches=out[:limit])
+
+
+# ---- correcting her ----------------------------------------------------
+#
+# The one write that runs the other way. Everywhere else she proposes and you
+# approve; here you say she has something wrong. Nothing is applied on the
+# spot — saying "that's wrong" should cost one gesture, not a second decision
+# about what the graph ought to say instead.
+
+def _summary(kind: str, text: Optional[str], to_label: Optional[str]) -> str:
+    if kind == "reword":
+        return f"\u2192 \u201c{text}\u201d"
+    if kind == "add":
+        return f"+ \u201c{text}\u201d"
+    if kind == "move":
+        return f"\u2192 under {to_label}"
+    return "she should stop leaning on this"
+
+
+def _dress(sg: dict) -> m.BrainSuggestion:
+    """The stored record, plus the words for reading it back."""
+    return m.BrainSuggestion(
+        **sg,
+        kind_word=data.SUGGESTION_WORDS["kind"][sg["kind"]],
+        summary=_summary(sg["kind"], sg.get("text"), sg.get("to_parent_label")),
+        state_word=data.SUGGESTION_WORDS["state"][sg["state"]],
+    )
+
+
+@app.get(f"{V1}/brain/suggestions", response_model=m.BrainSuggestionList)
+def list_suggestions():
+    """Newest first — the drawer reads top-down."""
+    items = sorted(data.BRAIN_SUGGESTIONS, key=lambda s: s["ts"], reverse=True)
+    return m.BrainSuggestionList(suggestions=[_dress(s) for s in items])
+
+
+@app.post(f"{V1}/brain/suggestions", response_model=m.BrainSuggestionAck, status_code=201)
+def create_suggestion(body: m.BrainSuggestionIn):
+    hit = _brain_node(body.node_id)
+    node = hit["node"]
+
+    # a suggestion missing its payload is worse than none: it reads as a
+    # change nobody can act on
+    if body.kind in ("reword", "add") and not body.text:
+        raise HTTPException(422, f"'{body.kind}' needs text")
+    if body.kind == "move" and not body.to_parent:
+        raise HTTPException(422, "'move' needs toParent")
+    if body.kind == "reword" and body.text == node["label"]:
+        raise HTTPException(422, "that is what it already says")
+
+    to_label = None
+    if body.to_parent:
+        if body.to_parent == node.get("parent"):
+            raise HTTPException(422, "it already lives there")
+        to_label = _brain_node(body.to_parent)["node"]["label"]
+
+    made = {
+        **body.model_dump(),
+        "id": f"sg_{secrets.token_hex(4)}",
+        "surface_id": hit["floor"] or "workspace",
+        "node_label": node["label"],
+        "to_parent_label": to_label,
+        "state": "pending",
+        "ts": int(datetime.datetime.now().timestamp()),
+    }
+    data.BRAIN_SUGGESTIONS.append(made)
+    return m.BrainSuggestionAck(
+        suggestion=_dress(made), toast=data.SUGGESTION_WORDS["toast"][body.kind]
+    )
+
+
+@app.delete(f"{V1}/brain/suggestions/{{sgid}}", status_code=204)
+def withdraw_suggestion(sgid: str):
+    """Taking it back, while nobody has acted on it. Once applied the graph
+    has already moved, and withdrawing the note would hide why."""
+    found = next((s for s in data.BRAIN_SUGGESTIONS if s["id"] == sgid), None)
+    if not found:
+        raise HTTPException(404, f"no such suggestion '{sgid}'")
+    if found["state"] != "pending":
+        raise HTTPException(409, "already acted on")
+    data.BRAIN_SUGGESTIONS.remove(found)
+    return Response(status_code=204)
 
 
 @app.get(f"{V1}/surfaces/{{sid}}/work", response_model=m.WorkList)

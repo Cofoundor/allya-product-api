@@ -101,6 +101,151 @@ class BrainGraph(Base):
     links: list[tuple[str, str]]
 
 
+# ---- /brain: the whole memory, and correcting it ------------------------
+#
+# The page owns no data of its own. Everything it draws arrives from here:
+# the joined graph, the words on the page, what a node is, where a thought
+# may be moved to, and what you are allowed to say about it.
+
+SuggestionKind = Literal["reword", "remove", "move", "add"]
+SuggestionState = Literal["pending", "applied", "declined"]
+
+
+class NodeRef(Base):
+    id: str
+    label: str
+
+
+class MoveTarget(NodeRef):
+    # which floor it sits on, so two "Pipeline"s are tellable apart
+    note: Optional[str] = None
+
+
+class Verb(Base):
+    """One thing you can say about a node, and the words for saying it."""
+    kind: SuggestionKind
+    label: str
+    hint: str
+    # the field it needs, if it needs one
+    field_label: Optional[str] = None
+    placeholder: Optional[str] = None
+    # shown instead of a field when the verb only needs a yes
+    warn: Optional[str] = None
+    # the reason field's example, which differs by what you are saying
+    why_placeholder: Optional[str] = None
+
+
+class BrainNodeDetail(Base):
+    id: str
+    label: str
+    # "a thought", "a floor of the brain" — the page never names a tier
+    kind_word: str
+    floor_id: Optional[str] = None
+    floor_label: Optional[str] = None
+    # a placeholder until that floor's own setup fills it in
+    provisional_note: Optional[str] = None
+    work_note: Optional[str] = None
+    # present only when this node is somewhere you can walk into
+    explore_label: Optional[str] = None
+    children: list[NodeRef] = []
+    move_targets: list[MoveTarget] = []
+    verbs: list[Verb] = []
+
+
+class BrainFloor(Base):
+    id: str
+    label: str
+    # everything she holds down there, directions and thoughts together
+    count: int
+
+
+class BrainCopy(Base):
+    """Every string on /brain. The page hard-codes none of them."""
+    title: str
+    held_noun: str
+    ring_title: str
+    ring_subtitle: str
+    floor_subtitle: str
+    back_label: str
+    hint: str
+    search_placeholder: str
+    search_empty: str
+    rail_title: str
+    rail_note: str
+    ring_label: str
+    inspector_empty_title: str
+    inspector_empty: str
+    verbs_title: str
+    verbs_note: str
+    why_label: str
+    send_label: str
+    sending_label: str
+    cancel_label: str
+    pending_note: str
+    drawer_title: str
+    drawer_empty: str
+    withdraw_label: str
+    offline: str
+    retry: str
+    loading: str
+    # when the saying itself fails, rather than the reading
+    send_failed: str
+    withdraw_failed: str
+
+
+class BrainPage(Base):
+    copy: BrainCopy
+    floors: list[BrainFloor]
+    # the company view: hub, floors, and the shape of each
+    ring: BrainGraph
+    held: int
+
+
+class BrainMatch(Base):
+    id: str
+    label: str
+    where: str
+    # the scope the client has to be in to open it
+    scope: str
+
+
+class BrainSearch(Base):
+    matches: list[BrainMatch]
+
+
+class BrainSuggestionIn(Base):
+    # the thought itself for reword/remove/move; the PARENT for add
+    node_id: str
+    kind: SuggestionKind
+    text: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    to_parent: Optional[str] = None
+    why: Optional[str] = Field(default=None, max_length=400)
+
+
+class BrainSuggestion(BrainSuggestionIn):
+    id: str
+    surface_id: str
+    # what it was called when you said it, so the list still reads later
+    node_label: str
+    to_parent_label: Optional[str] = None
+    # the server's words for both, so the drawer maps nothing
+    kind_word: str
+    summary: str
+    state_word: str
+    state: SuggestionState = "pending"
+    ts: int
+
+
+class BrainSuggestionList(Base):
+    suggestions: list[BrainSuggestion]
+
+
+class BrainSuggestionAck(Base):
+    suggestion: BrainSuggestion
+    # what she says back — her words, not the client's
+    toast: str
+
+
 # ---- work --------------------------------------------------------------
 
 class WorkItem(Base):
