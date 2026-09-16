@@ -13,7 +13,7 @@ import os
 import secrets
 from typing import Annotated, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 import crm_query as q
@@ -1154,44 +1154,22 @@ def list_sources():
     return [m.Source(**s) for s in q.sources_out()]
 
 
-# ---- the gate ----------------------------------------------------------
+# ---- who you are -----------------------------------------------------
+#
+# There is no sign-in. The product works for one founder and every request is
+# theirs — no accounts, no passwords, no tokens.
 
-def _bearer(authorization: Optional[str]) -> dict:
-    """The signed-in user, or 401. No expiry, no refresh — a dummy session."""
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    email = data.TOKENS.get(token)
-    if not email:
-        raise HTTPException(401, "Not signed in")
-    return data.USERS[email]
-
-
-@app.get(f"{V1}/gate", response_model=m.Gate)
-def get_gate():
-    """Everything the sign-in page renders, graph included."""
-    return m.Gate(**data.GATE)
+def _you() -> dict:
+    """Whoever the product is working for. Always the founder here; a real
+    backend resolves the caller in this one place, and nothing that asks has
+    to change."""
+    return data.FOUNDER
 
 
-@app.post(f"{V1}/session", response_model=m.Session, status_code=201)
-def sign_in(body: m.Credentials):
-    user = data.USERS.get(body.email.strip().lower())
-    if not user or body.password != data.DEMO_PASSWORD:
-        # one message for both cases — never reveal which half was wrong
-        raise HTTPException(401, "That email and password don’t match an account.")
-    token = secrets.token_urlsafe(24)
-    data.TOKENS[token] = user["email"]
-    return m.Session(token=token, user=user)
-
-
-@app.get(f"{V1}/session", response_model=m.User)
-def whoami(authorization: Annotated[Optional[str], Header()] = None):
-    return m.User(**_bearer(authorization))
-
-
-@app.delete(f"{V1}/session", status_code=204)
-def sign_out(authorization: Annotated[Optional[str], Header()] = None):
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    data.TOKENS.pop(token, None)  # signing out twice is not an error
-    return Response(status_code=204)
+@app.get(f"{V1}/me", response_model=m.User)
+def get_me():
+    """Who the product is working for — the account in the topbar."""
+    return m.User(**_you())
 
 
 # ---- you ---------------------------------------------------------------
@@ -1249,16 +1227,16 @@ def _profile_out(user: dict) -> m.Profile:
 
 
 @app.get(f"{V1}/profile", response_model=m.Profile)
-def get_profile(authorization: Annotated[Optional[str], Header()] = None):
-    """You, as Allya holds you. 401 signed out — there is no generic founder."""
-    return _profile_out(_bearer(authorization))
+def get_profile():
+    """You, as Allya holds you."""
+    return _profile_out(_you())
 
 
 @app.patch(f"{V1}/profile", response_model=m.Profile)
-def edit_profile(body: m.ProfileEdit, authorization: Annotated[Optional[str], Header()] = None):
+def edit_profile(body: m.ProfileEdit):
     """Your name, your role, your company. Name and company are the account's,
     so they're written back to it — the topbar has to agree with this page."""
-    user = _bearer(authorization)
+    user = _you()
     pr = _profile(user)
     if body.name is not None:
         user["name"] = body.name.strip()
@@ -1270,10 +1248,10 @@ def edit_profile(body: m.ProfileEdit, authorization: Annotated[Optional[str], He
 
 
 @app.patch(f"{V1}/profile/habits/{{hid}}", response_model=m.Profile)
-def edit_habit(hid: str, body: m.HabitEdit, authorization: Annotated[Optional[str], Header()] = None):
+def edit_habit(hid: str, body: m.HabitEdit):
     """One line about how you work. A habit with `options` only takes one of
     them — a free-text timezone is a bug report waiting to happen."""
-    user = _bearer(authorization)
+    user = _you()
     pr = _profile(user)
     habit = next((h for h in pr["habits"] if h["id"] == hid), None)
     if not habit:
@@ -1286,11 +1264,11 @@ def edit_habit(hid: str, body: m.HabitEdit, authorization: Annotated[Optional[st
 
 
 @app.post(f"{V1}/profile/knows", response_model=m.Profile, status_code=201)
-def add_known(body: m.KnownAdd, authorization: Annotated[Optional[str], Header()] = None):
+def add_known(body: m.KnownAdd):
     """Tell her something about yourself. It lands at the top marked `told`,
     which is the whole point of the seam — what you said outranks what she
     worked out, and it never pretends to have evidence it doesn't have."""
-    user = _bearer(authorization)
+    user = _you()
     pr = _profile(user)
     pr["knows"].insert(
         0,
@@ -1300,9 +1278,9 @@ def add_known(body: m.KnownAdd, authorization: Annotated[Optional[str], Header()
 
 
 @app.delete(f"{V1}/profile/knows/{{kid}}", response_model=m.Profile)
-def forget_known(kid: str, authorization: Annotated[Optional[str], Header()] = None):
+def forget_known(kid: str):
     """Forget one. A memory you can't delete isn't a memory, it's a file."""
-    user = _bearer(authorization)
+    user = _you()
     pr = _profile(user)
     before = len(pr["knows"])
     pr["knows"] = [k for k in pr["knows"] if k["id"] != kid]
@@ -1312,10 +1290,10 @@ def forget_known(kid: str, authorization: Annotated[Optional[str], Header()] = N
 
 
 @app.patch(f"{V1}/profile/trust/{{sid}}", response_model=m.Profile)
-def set_trust(sid: str, body: m.TrustEdit, authorization: Annotated[Optional[str], Header()] = None):
+def set_trust(sid: str, body: m.TrustEdit):
     """Move one floor's leash. The only write on this page that changes what
     happens without you, which is why the UI makes you read the rung first."""
-    user = _bearer(authorization)
+    user = _you()
     pr = _profile(user)
     row = next((t for t in pr["trust"] if t["surface_id"] == sid), None)
     if not row:
@@ -1399,23 +1377,16 @@ def _answer_book() -> m.AnswerBook:
 
 
 @app.get(f"{V1}/profile/answers", response_model=m.AnswerBook)
-def get_answers(authorization: Annotated[Optional[str], Header()] = None):
-    """Everything typed into every onboarding. 401 signed out."""
-    _bearer(authorization)
+def get_answers():
+    """Everything typed into every onboarding."""
     return _answer_book()
 
 
 @app.patch(f"{V1}/profile/answers/{{gid}}/{{key}}", response_model=m.AnswerBook)
-def edit_answer(
-    gid: str,
-    key: str,
-    body: m.AnswerEdit,
-    authorization: Annotated[Optional[str], Header()] = None,
-):
+def edit_answer(gid: str, key: str, body: m.AnswerEdit):
     """Change one answer. A choice only takes one of its options, and a group
     nobody has answered yet is a 409 rather than a silent create — you cannot
     edit the answer to a question you were never asked."""
-    _bearer(authorization)
     group = _answer_group(gid) if gid == "company" or gid in data.SERVICE_ONBOARDING else None
     if not group:
         raise HTTPException(404, f"no onboarding called '{gid}'")
@@ -1436,14 +1407,13 @@ def edit_answer(
 
 
 @app.post(f"{V1}/profile/answers/company", response_model=m.AnswerBook, status_code=201)
-def save_company_answers(body: m.AnswersIn, authorization: Annotated[Optional[str], Header()] = None):
+def save_company_answers(body: m.AnswersIn):
     """What the company onboarding heard, on its way past. The flow still runs
     client-side and still writes its own localStorage record; this is so the
     answers outlive that browser and can be corrected here afterwards.
 
     Partial on purpose: the flow posts once at the end, and a founder who
     skipped a question should not be blocked from keeping the five they gave."""
-    _bearer(authorization)
     keys = {q["key"] for q in data.COMPANY_ONBOARDING["questions"]}
     kept = {k: v.strip() for k, v in body.answers.items() if k in keys and v.strip()}
     if not kept:

@@ -70,22 +70,19 @@ All paths are under `/api/v1`. Field names are **camelCase on the wire**
 | POST | `/surfaces/{sid}/conversation/messages` | `Reply` — body `{text}` |
 | GET | `/surfaces/{sid}/onboarding` | `ServiceOnboarding` — the four questions that make a floor usable |
 | POST | `/surfaces/{sid}/onboarding` | `OnboardingResult` — body `{answers}`; unlocks the floor, **422** if any are blank |
-| GET | `/gate` | `Gate` — the sign-in page's copy and the graph behind it |
-| POST | `/session` | `Session` — body `{email, password}`; **201**, or **401** |
-| GET | `/session` | `User` — who the bearer token belongs to, or **401** |
-| DELETE | `/session` | **204**; signing out twice is not an error |
+| GET | `/me` | `User` — who the product is working for; there's no sign-in |
 | GET | `/work/{wid}/review` | `Review` — the approval sheet |
 | POST | `/work/{wid}/approve` | `WorkAction` — `{item, toast, reply}` |
 | POST | `/work/{wid}/undo` | `WorkAction` |
 | POST | `/work/{wid}/revision` | `Reply` |
 | PATCH | `/knowledge/{fid}` | `Fact` — body `{flagged?, text?}` |
-| GET | `/profile` | `Profile` — you, as Allya holds you; **401** signed out |
+| GET | `/profile` | `Profile` — you, as Allya holds you |
 | PATCH | `/profile` | `Profile` — body `{name?, role?, company?}`; name and company write back to the account |
 | PATCH | `/profile/habits/{hid}` | `Profile` — body `{value}`; **422** if the habit has `options` and this isn't one |
 | PATCH | `/profile/trust/{sid}` | `Profile` — body `{level}`; one floor's leash |
 | POST | `/profile/knows` | `Profile` — body `{text}`; **201**, lands at the top marked `told` |
 | DELETE | `/profile/knows/{kid}` | `Profile` — forget one; **404** if it isn't held |
-| GET | `/profile/answers` | `AnswerBook` — every onboarding answer; **401** signed out |
+| GET | `/profile/answers` | `AnswerBook` — every onboarding answer |
 | PATCH | `/profile/answers/{gid}/{key}` | `AnswerBook` — body `{value}`; **409** if that onboarding was never run, **422** on a blank or a bad option |
 | POST | `/profile/answers/company` | `AnswerBook` — body `{answers}`; **201**, what the company onboarding heard on its way past |
 
@@ -175,8 +172,8 @@ Every write returns the whole `Profile` rather than the piece that changed,
 because moving a rung rewrites the sentence under it and the client shouldn't
 have to reassemble that itself.
 
-Profiles are seeded per user id on first read, so editing the demo account
-doesn't rewrite the founder's.
+The profile is seeded on first read, and edits live in memory until the
+process restarts.
 
 Three figures live on `stats` and earn the top of the page; the rest are on
 `statGroups`, grouped by the question they answer. `ui.lenses` names the three
@@ -242,21 +239,13 @@ Each service floor has its own short onboarding. Until it's done:
 `ONBOARDED` starts false for all five services and is global to the process,
 not per user — a dummy, like the rest of this.
 
-### Signing in
+### Who you are
 
-> **Not authentication.** Seeded accounts, one shared demo password, tokens in
-> a dict until the process restarts. No hashing, no expiry, no sessions table.
-> It exists so the sign-in page has a real 401 to render and the product can
-> tell you who you are. Replace it wholesale before anything real.
-
-| Email | Password |
-| --- | --- |
-| `sanshat@zeroto10.ai` | `allya` (override with `DEMO_PASSWORD`) |
-| `demo@zeroto10.ai` | same |
-
-Any other email, or the wrong password, returns 401 with a single message for
-both cases — never reveal which half was wrong. The product is **not gated**:
-`/` works signed out, and the topbar offers a way in.
+There is **no sign-in** — no accounts, no passwords, no tokens. The product
+works for one founder, `FOUNDER` in `data.py`, and every request is theirs.
+`_you()` in `main.py` is the one place that decides who's asking: a real
+backend resolves the caller there, and nothing that calls it has to change.
+`GET /me` is that founder, for the account in the topbar.
 
 ## Files
 

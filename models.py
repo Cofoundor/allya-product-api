@@ -766,36 +766,16 @@ class Move(Base):
     own_title: str = ""
 
 
-# ---- the gate ----------------------------------------------------------
-
-class Credentials(Base):
-    email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=1, max_length=200)
-
+# ---- who you are -----------------------------------------------------
 
 class User(Base):
+    """The founder the product works for. There's no sign-in, so there's no
+    session to hang this on — it's just who's being answered to."""
+
     id: str
     email: str
     name: str
     company: str
-
-
-class Session(Base):
-    token: str
-    user: User
-
-
-class Gate(Base):
-    """Everything the sign-in page renders — including the graph that drifts
-    behind it, which is the company as an outsider meets it rather than the
-    workspace brain."""
-
-    headline: str
-    lede: str
-    footnote: str
-    footnote_link_label: str
-    footnote_link_href: str
-    brain: BrainGraph
 
 
 # ---- you ---------------------------------------------------------------
