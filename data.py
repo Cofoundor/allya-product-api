@@ -1013,7 +1013,37 @@ REVISION_REPLY = "Tell me what’s off and I’ll have a new pass in your panel 
 # Which floors are set up lives here for as long as the process does.
 
 ONBOARDED: dict[str, bool] = {s: False for s in SERVICE_IDS}
-ANSWERS: dict[str, dict[str, str]] = {}
+
+# Every onboarding answer, by group id: "company" plus one per service floor.
+# Global to the process rather than per user, exactly like ONBOARDED — a
+# dummy, like the rest of this. A floor stays absent from here until its own
+# onboarding is finished, which is what lets the profile say honestly that a
+# floor has never been set up rather than showing four empty boxes.
+ANSWERS: dict[str, dict[str, str]] = {
+    "company": {
+        "company": "ZeroTo10",
+        "business": (
+            "We build Allya — an AI execution partner for early-stage founders. "
+            "Agents do the work across marketing, hiring, PR, sales and ops, real "
+            "experts approve it, and nothing ships without the founder. It’s for "
+            "people running a company with no team behind them."
+        ),
+        "market": "Businesses",
+        "customer": "Solo and two-person founders, pre-Series A, doing every job themselves.",
+        "revenue": "Around ₹2–3L a month, mostly the ₹2,000 plan, first month free.",
+        "goals": (
+            "1. Get to 200 paying founders\n"
+            "2. Prove the 85/15 agent-to-expert split holds at volume\n"
+            "3. Raise a seed round off the brain, not the deck"
+        ),
+        "edge": (
+            "Everyone else sells you a chatbot or a freelancer. We’re the only one "
+            "where the agent does the work and a real expert signs it off before it "
+            "reaches you — and the company brain underneath means it gets better at "
+            "your business specifically, not at business in general."
+        ),
+    },
+}
 
 
 def _q(key, tag, sub, q, kind, cluster_label, learned, **kw):
@@ -1027,6 +1057,78 @@ def _q(key, tag, sub, q, kind, cluster_label, learned, **kw):
         },
         **kw,
     }
+
+
+# ---- the company onboarding, as a spec -----------------------------------
+#
+# The six questions that build the company brain. The live flow still asks
+# them from the client (`product-next/src/lib/onboarding-data.ts`), which is
+# why this is a mirror rather than the source — the flow reads its own copy
+# because it also owns the acks, the clusters and the showcase reading, none
+# of which are the API's business yet. What IS the API's business is the
+# answer: the profile has to be able to show it back and let it be changed,
+# and neither is possible while the only copy lives in a browser.
+#
+# Move the flow onto GET /surfaces/workspace/onboarding and this becomes the
+# single source. Until then, keep `key`, `q` and `type` in step with that file.
+
+COMPANY_ONBOARDING = {
+    "label": "Your company",
+    "note": "the six questions the whole brain is built on",
+    "href": "/onboarding",
+    "questions": [
+        {
+            "key": "company",
+            "label": "The name",
+            "q": "What\u2019s the company called?",
+            "type": "short",
+            "learned": "Knew what to call you",
+        },
+        {
+            "key": "business",
+            "label": "The business",
+            "q": "Tell me about your business \u2014 what do you do, and who is it for?",
+            "type": "long",
+            "learned": "Mapped what you actually do",
+        },
+        {
+            "key": "market",
+            "label": "Your market",
+            "q": "Who do you sell to \u2014 other businesses, everyday consumers, or both?",
+            "type": "choice",
+            "options": ["Businesses", "Consumers", "Both"],
+            "learned": "Placed you in your market",
+        },
+        {
+            "key": "customer",
+            "label": "Your customer",
+            "q": "In one line \u2014 who is your ideal customer?",
+            "type": "short",
+            "learned": "Profiled who you\u2019re for",
+        },
+        {
+            "key": "revenue",
+            "label": "Your revenue",
+            "q": "Roughly, what\u2019s your monthly revenue right now? A range is fine.",
+            "type": "short",
+            "learned": "Sized what to push on now",
+        },
+        {
+            "key": "goals",
+            "label": "Your goals",
+            "q": "What are your top 3 objectives for the next 6\u201312 months?",
+            "type": "long",
+            "learned": "Locked in what we\u2019re aiming at",
+        },
+        {
+            "key": "edge",
+            "label": "Your edge",
+            "q": "What makes you different from your competitors?",
+            "type": "long",
+            "learned": "Found the thing only you can say",
+        },
+    ],
+}
 
 
 SERVICE_ONBOARDING: dict[str, dict] = {
@@ -1740,6 +1842,311 @@ USERS: dict[str, dict] = {
 
 # token -> user id, for as long as the process lives
 TOKENS: dict[str, str] = {}
+
+
+# ---- you ---------------------------------------------------------------
+#
+# The other half of the record. The brain is the company; this is the founder
+# it answers to — what Allya has learned about *you*, how you like to be
+# worked with, and the leash: how much of each floor reaches you before it
+# moves. The rungs are deliberately worded as costs, not features, because
+# loosening one is the only thing on that page you can't take back cleanly.
+
+TRUST_LEVELS = [
+    {
+        "id": "ask",
+        "label": "Everything",
+        "note": "Every draft comes to you before it moves. Slowest, and nothing surprises you.",
+    },
+    {
+        "id": "brief",
+        "label": "The ones that matter",
+        "note": "An expert clears the routine. Anything new, public or paid still waits on you.",
+    },
+    {
+        "id": "trusted",
+        "label": "When I’m stuck",
+        "note": "The floor runs itself. Money, a real person’s name and anything public still come back to you — that never moves.",
+    },
+]
+
+# What a rung means on a given floor. The same three words buy different
+# things on marketing and on sales, and a leash you can't read is a leash
+# nobody adjusts.
+TRUST_NOTES: dict[str, dict[str, str]] = {
+    "marketing": {
+        "ask": "Every subject line, every send time, every list.",
+        "brief": "Agents write and schedule; a marketing expert clears the routine sends. A new audience or a paid push still waits.",
+        "trusted": "The calendar runs. You still sign off on anything that names a customer or spends money.",
+    },
+    "hiring": {
+        "ask": "Every job post, every outreach note, every rejection.",
+        "brief": "Sourcing and screening run on their own. The shortlist, the offer and anything said to a candidate in your name comes to you.",
+        "trusted": "The pipeline runs to shortlist. Offers and anything with a salary in it always come back.",
+    },
+    "pr": {
+        "ask": "Every pitch, every newsletter, every line quoted as yours.",
+        "brief": "Drafts and journalist research run ahead. Anything that goes out under your name waits on you.",
+        "trusted": "Research, drafts and follow-ups run. A quote attributed to you never sends itself.",
+    },
+    "sales": {
+        "ask": "Every message to every prospect, before it sends.",
+        "brief": "Follow-ups and sequences run. A first touch with a new account, a discount or a contract waits.",
+        "trusted": "The funnel works itself. Pricing, discounts and anything signed still stop at you.",
+    },
+    "ops": {
+        "ask": "Every change to a process, a doc or a tool.",
+        "brief": "Routine tidying runs; anything that changes how the company works is proposed, not done.",
+        "trusted": "Ops keeps itself. Spend, access and anything touching payroll still ask first.",
+    },
+}
+
+
+# Three headline figures earn the top of the profile; the rest are grouped by
+# the question they answer. A founder wants "am I the bottleneck?" answered,
+# not forty numbers in a row.
+STAT_GROUPS = [
+    {
+        "id": "deciding",
+        "label": "How you decide",
+        "note": "The only job the product can’t do for you, measured.",
+        "stats": [
+            {"id": "decisions", "value": "412", "label": "decisions made", "delta": "since March"},
+            {"id": "median", "value": "1m 54s", "label": "median time to decide", "delta": "fastest before 11am"},
+            {"id": "asis", "value": "94%", "label": "approved as drafted", "delta": "you rewrote 24"},
+            {"id": "revisions", "value": "24", "label": "sent back for a revision", "delta": "19 were subject lines"},
+            {"id": "undone", "value": "3", "label": "undone inside the hold window", "delta": "all three in week one"},
+            {"id": "waiting", "value": "6", "label": "waiting on you right now", "delta": "oldest is 2 days"},
+        ],
+    },
+    {
+        "id": "output",
+        "label": "What got done",
+        "note": "The 85/15 split, as it actually ran.",
+        "stats": [
+            {"id": "shipped", "value": "1,208", "label": "things shipped", "delta": "18 this week"},
+            {"id": "agent", "value": "85%", "label": "done by agents", "delta": "1,027 items"},
+            {"id": "expert", "value": "15%", "label": "passed by an expert", "delta": "181 items"},
+            {"id": "running", "value": "8", "label": "running right now", "delta": "across five floors"},
+            {"id": "hours", "value": "310h", "label": "of work you didn’t do", "delta": "at your own pace, ~7 weeks"},
+            {"id": "spend", "value": "₹2,000", "label": "a month", "delta": "first month was free"},
+        ],
+    },
+    {
+        "id": "attention",
+        "label": "Where your attention went",
+        "note": "Which floor asked for you, and how often you said yes.",
+        "stats": [
+            {"id": "a_marketing", "value": "38%", "label": "marketing", "delta": "9 decisions this month"},
+            {"id": "a_sales", "value": "31%", "label": "sales", "delta": "14 decisions this month"},
+            {"id": "a_pr", "value": "14%", "label": "PR", "delta": "5 decisions this month"},
+            {"id": "a_hiring", "value": "13%", "label": "hiring", "delta": "3 decisions this month"},
+            {"id": "a_ops", "value": "4%", "label": "ops", "delta": "1 decision this month"},
+            {"id": "a_quiet", "value": "5 days", "label": "longest you went untouched", "delta": "the week of the raise"},
+        ],
+    },
+    {
+        "id": "brain",
+        "label": "What the brain holds",
+        "note": "Everything you’ve told me, and everything I worked out.",
+        "stats": [
+            {"id": "facts", "value": "168", "label": "facts about the company", "delta": "across five floors"},
+            {"id": "people", "value": "1,340", "label": "people in the book", "delta": "41 merged last cleanup"},
+            {"id": "answers", "value": "7", "label": "onboarding answers on file", "delta": "the company’s six, plus its name"},
+            {"id": "floors", "value": "0 of 5", "label": "floors set up", "delta": "each one sharpens its own agents"},
+        ],
+    },
+]
+
+
+def _profile_seed(user: dict) -> dict:
+    """One founder's profile. Built per user so editing the demo account
+    doesn't quietly rewrite the founder's — a dummy, but not a lying one."""
+    return {
+        "user": user,
+        "role": "Founder & CEO",
+        "since": "March 2026",
+        "blurb": "This is you, as I hold you. What’s on this page decides what reaches your desk and what I keep off it.",
+        "stats": [
+            {"id": "decisions", "value": "412", "label": "decisions you’ve made", "delta": "since March"},
+            {"id": "speed", "value": "1m 54s", "label": "median time to decide", "delta": "fastest before 11am"},
+            {"id": "asis", "value": "94%", "label": "approved as drafted", "delta": "you rewrote 24"},
+        ],
+        "stat_groups": STAT_GROUPS,
+        "knows": [
+            {
+                "id": "k_mornings",
+                "text": "You decide fastest in the morning, so that’s when I bring you the hard ones.",
+                "source": "learned",
+                "note": "8 of your last 10 approvals landed before 11am",
+            },
+            {
+                "id": "k_subjects",
+                "text": "Subject lines are the thing you rewrite most. I draft three now and lead with the plainest.",
+                "source": "learned",
+                "note": "24 rewrites, 19 of them a subject line",
+            },
+            {
+                "id": "k_why",
+                "text": "You read the reasoning before the draft, so I put the why first.",
+                "source": "learned",
+                "note": "you open the rationale before the body 9 times in 10",
+            },
+            {
+                "id": "k_names",
+                "text": "Nothing goes out naming a customer without their say-so.",
+                "source": "told",
+                "note": None,
+            },
+            {
+                "id": "k_raise",
+                "text": "Fundraising weeks beat everything — work I’d normally send up waits until Friday.",
+                "source": "told",
+                "note": None,
+            },
+            {
+                "id": "k_ask",
+                "text": "You’d rather be asked twice than told once. When I’m unsure, you want the question.",
+                "source": "learned",
+                "note": "you asked for the question 6 times after a silent decision",
+            },
+        ],
+        "habits": [
+            {
+                "id": "hours",
+                "label": "Hours",
+                "value": "08:00 – 20:00",
+                "note": "Nothing reaches you outside these unless it’s on fire.",
+                "options": [],
+            },
+            {
+                "id": "timezone",
+                "label": "Timezone",
+                "value": "Asia/Kolkata",
+                "note": "Every time on every screen is written in this one.",
+                "options": ["Asia/Kolkata", "Europe/London", "America/New_York", "Asia/Singapore"],
+            },
+            {
+                "id": "reach",
+                "label": "Reach you on",
+                "value": "WhatsApp",
+                "note": "Where a decision finds you when you’re not in here.",
+                "options": ["WhatsApp", "Email", "In here only"],
+            },
+            {
+                "id": "pace",
+                "label": "How often",
+                "value": "Twice a day",
+                "note": "Batched, so a morning isn’t ten interruptions.",
+                "options": ["As it happens", "Twice a day", "Once, each evening"],
+            },
+            {
+                "id": "voice",
+                "label": "Sound like",
+                "value": "Plain, first person, no hype",
+                "note": "How anything written as you should read.",
+                "options": [],
+            },
+        ],
+        "trust": [
+            {"surface_id": "marketing", "level": "brief", "asked": "9 decisions this month"},
+            {"surface_id": "hiring", "level": "ask", "asked": "3 decisions this month"},
+            {"surface_id": "pr", "level": "ask", "asked": "5 decisions this month"},
+            {"surface_id": "sales", "level": "brief", "asked": "14 decisions this month"},
+            {"surface_id": "ops", "level": "trusted", "asked": "1 decision this month"},
+        ],
+        "connections": [
+            {
+                "id": "email",
+                "label": "Email",
+                "account": user["email"],
+                "state": "live",
+                "note": "Sending as you since March. 4,180 delivered, 11 bounced.",
+                "action": "Open the room",
+                "href": "/marketing/email",
+            },
+            {
+                "id": "linkedin",
+                "label": "LinkedIn",
+                "account": user["name"],
+                "state": "attention",
+                "note": "The token expires in 6 days. Reconnect and nothing pauses.",
+                "action": "Reconnect",
+                "href": "/marketing/linkedin",
+            },
+            {
+                "id": "whatsapp",
+                "label": "WhatsApp",
+                "account": "Not connected",
+                "state": "off",
+                "note": "You asked to be reached here, and I can’t yet.",
+                "action": "Connect",
+                "href": "/marketing/whatsapp",
+            },
+            {
+                "id": "calendar",
+                "label": "Calendar",
+                "account": user["email"],
+                "state": "live",
+                "note": "Read-only. I schedule around your week, I don’t write to it.",
+                "action": "Open the room",
+                "href": None,
+            },
+        ],
+        "ui": {
+            "know_title": "What I know about you",
+            "trust_title": "What I can do without asking",
+            "trust_blurb": "One leash per floor. Loosen it and less reaches you — the line at the bottom of every rung never moves.",
+            "habits_title": "How you work",
+            "connections_title": "What I act through",
+            "stats_title": "Everything, in numbers",
+            "answers_title": "What you told me",
+            "lenses": [
+                {"id": "you", "label": "You", "note": "what I hold, and how you like to work"},
+                {"id": "numbers", "label": "Numbers", "note": "every figure on the record"},
+                {"id": "answers", "label": "Onboarding", "note": "every answer you gave, editable"},
+            ],
+            "identity": [
+                {"key": "name", "label": "Name"},
+                {"key": "role", "label": "Role"},
+                {"key": "company", "label": "Company"},
+            ],
+            "identity_note": "Your name is what I sign your email with, so this is the same name your customers read.",
+            "since_prefix": "with me since",
+            "knows_empty": "Nothing yet. Tell me something below and I’ll hold it — that’s how this starts.",
+            "source_labels": {"told": "you told me", "learned": "I worked out"},
+            "connection_labels": {
+                "live": "Connected",
+                "attention": "Needs you soon",
+                "off": "Not connected",
+            },
+            "actions": {
+                "edit": "Edit",
+                "save": "Save",
+                "saving": "Saving…",
+                "saved": "Saved",
+                "cancel": "Cancel",
+                "forget": "Forget",
+                "forgetting": "Forgetting…",
+                "forgot": "Forgotten",
+                "loosen": "Loosen it",
+                "loosening": "Loosening…",
+                "keep": "Keep it",
+            },
+            "placeholder": "Tell me something about you…",
+            "suggest_label": "Things founders tell me first",
+            "suggestions": [
+                "I don’t work Fridays.",
+                "Never put a number in front of me before 9am.",
+                "Don’t bring me anything under ₹10,000 — just do it.",
+            ],
+            "levels": TRUST_LEVELS,
+        },
+    }
+
+
+# user id -> profile, seeded on first read. Edits live here until restart.
+PROFILES: dict[str, dict] = {}
 
 # The graph behind the gate: not the workspace brain (departments and live
 # work) but the company as an outsider meets it.

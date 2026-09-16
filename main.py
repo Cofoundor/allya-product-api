@@ -901,6 +901,264 @@ def sign_out(authorization: Annotated[Optional[str], Header()] = None):
     return Response(status_code=204)
 
 
+# ---- you ---------------------------------------------------------------
+#
+# The profile is the founder half of the record: what Allya knows about you,
+# how you like to be worked with, and the leash — how much of each floor
+# reaches you before it moves. Every write returns the whole profile, because
+# a rung change rewrites the sentence under it and the client shouldn't have
+# to reassemble that itself.
+
+def _profile(user: dict) -> dict:
+    """This user's profile, seeded on first read."""
+    return data.PROFILES.setdefault(user["id"], data._profile_seed(user))
+
+
+def _trust_row(t: dict) -> m.Trust:
+    """A leash, read back in its floor's own words. The note is derived, not
+    stored — a stored one goes stale the moment the rung moves."""
+    sid = t["surface_id"]
+    return m.Trust(
+        surface_id=sid,
+        label=data.SURFACES[sid]["label"],
+        href=f"/{sid}",
+        level=t["level"],
+        note=data.TRUST_NOTES[sid][t["level"]],
+        asked=t["asked"],
+    )
+
+
+def _summaries(pr: dict) -> dict[str, str]:
+    """What each section says in its own header. Recomputed on every read, so
+    adding a memory or connecting an account can never leave a stale count."""
+    knows, conns = pr["knows"], pr["connections"]
+    told = sum(1 for k in knows if k["source"] == "told")
+    wants = sum(1 for c in conns if c["state"] != "live")
+    said = pr["ui"]["source_labels"]["told"]
+    figures = sum(len(g["stats"]) for g in pr["stat_groups"])
+    return {
+        "knows": f"{len(knows)} things · {told} {said}" if knows else "nothing yet",
+        "habits": f"{len(pr['habits'])} lines",
+        "trust": f"{len(pr['trust'])} floors",
+        "connections": f"{wants} want you" if wants else "all connected",
+        "stats": f"{figures} figures",
+    }
+
+
+def _profile_out(user: dict) -> m.Profile:
+    pr = _profile(user)
+    return m.Profile(
+        **{k: v for k, v in pr.items() if k not in ("user", "trust")},
+        user=user,  # the name and company live on the account, not a copy of it
+        trust=[_trust_row(t) for t in pr["trust"]],
+        summaries=_summaries(pr),
+    )
+
+
+@app.get(f"{V1}/profile", response_model=m.Profile)
+def get_profile(authorization: Annotated[Optional[str], Header()] = None):
+    """You, as Allya holds you. 401 signed out — there is no generic founder."""
+    return _profile_out(_bearer(authorization))
+
+
+@app.patch(f"{V1}/profile", response_model=m.Profile)
+def edit_profile(body: m.ProfileEdit, authorization: Annotated[Optional[str], Header()] = None):
+    """Your name, your role, your company. Name and company are the account's,
+    so they're written back to it — the topbar has to agree with this page."""
+    user = _bearer(authorization)
+    pr = _profile(user)
+    if body.name is not None:
+        user["name"] = body.name.strip()
+    if body.company is not None:
+        user["company"] = body.company.strip()
+    if body.role is not None:
+        pr["role"] = body.role.strip()
+    return _profile_out(user)
+
+
+@app.patch(f"{V1}/profile/habits/{{hid}}", response_model=m.Profile)
+def edit_habit(hid: str, body: m.HabitEdit, authorization: Annotated[Optional[str], Header()] = None):
+    """One line about how you work. A habit with `options` only takes one of
+    them — a free-text timezone is a bug report waiting to happen."""
+    user = _bearer(authorization)
+    pr = _profile(user)
+    habit = next((h for h in pr["habits"] if h["id"] == hid), None)
+    if not habit:
+        raise HTTPException(404, f"unknown habit '{hid}'")
+    value = body.value.strip()
+    if habit["options"] and value not in habit["options"]:
+        raise HTTPException(422, f"'{value}' isn't one of the options for '{hid}'")
+    habit["value"] = value
+    return _profile_out(user)
+
+
+@app.post(f"{V1}/profile/knows", response_model=m.Profile, status_code=201)
+def add_known(body: m.KnownAdd, authorization: Annotated[Optional[str], Header()] = None):
+    """Tell her something about yourself. It lands at the top marked `told`,
+    which is the whole point of the seam — what you said outranks what she
+    worked out, and it never pretends to have evidence it doesn't have."""
+    user = _bearer(authorization)
+    pr = _profile(user)
+    pr["knows"].insert(
+        0,
+        {"id": f"k_{secrets.token_hex(4)}", "text": body.text.strip(), "source": "told", "note": None},
+    )
+    return _profile_out(user)
+
+
+@app.delete(f"{V1}/profile/knows/{{kid}}", response_model=m.Profile)
+def forget_known(kid: str, authorization: Annotated[Optional[str], Header()] = None):
+    """Forget one. A memory you can't delete isn't a memory, it's a file."""
+    user = _bearer(authorization)
+    pr = _profile(user)
+    before = len(pr["knows"])
+    pr["knows"] = [k for k in pr["knows"] if k["id"] != kid]
+    if len(pr["knows"]) == before:
+        raise HTTPException(404, f"nothing known by '{kid}'")
+    return _profile_out(user)
+
+
+@app.patch(f"{V1}/profile/trust/{{sid}}", response_model=m.Profile)
+def set_trust(sid: str, body: m.TrustEdit, authorization: Annotated[Optional[str], Header()] = None):
+    """Move one floor's leash. The only write on this page that changes what
+    happens without you, which is why the UI makes you read the rung first."""
+    user = _bearer(authorization)
+    pr = _profile(user)
+    row = next((t for t in pr["trust"] if t["surface_id"] == sid), None)
+    if not row:
+        raise HTTPException(404, f"no leash for surface '{sid}'")
+    row["level"] = body.level
+    return _profile_out(user)
+
+
+# ---- the answer book ---------------------------------------------------
+#
+# Every onboarding answer, readable and editable. These used to be write-only:
+# a floor's four went into ANSWERS and were never read back, and the company's
+# six never left the browser at all. A founder who mistyped their revenue in
+# week one had no way to correct it short of starting over, which is the kind
+# of thing that quietly poisons everything downstream of it.
+#
+# One group per onboarding. A floor with no answers is `new` rather than a
+# group of empty boxes: it has not been asked yet, and the book says so and
+# offers the way in.
+
+def _answer_group(gid: str) -> m.AnswerGroup:
+    """One onboarding, its questions, and whatever was said back."""
+    said = data.ANSWERS.get(gid, {})
+
+    if gid == "company":
+        spec = data.COMPANY_ONBOARDING
+        label, note, href = spec["label"], spec["note"], spec["href"]
+        cta = "Run it again"
+        questions = spec["questions"]
+    else:
+        spec = data.SERVICE_ONBOARDING[gid]
+        label = data.SURFACES[gid]["label"]
+        note = spec["lede"]
+        href = f"/{gid}/onboarding"
+        cta = spec["cta"] if not said else "Run it again"
+        questions = spec["questions"]
+
+    answered = sum(1 for q in questions if said.get(q["key"], "").strip())
+    return m.AnswerGroup(
+        id=gid,
+        label=label,
+        note=note,
+        # answered at all is the honest test — ONBOARDED is about whether the
+        # floor can act, which is a different question from what it was told
+        status="complete" if said else "new",
+        status_label="never set up" if not said else f"{answered} of {len(questions)} answered",
+        empty=f"I haven’t asked you about {label.lower()} yet, so there’s nothing here to change.",
+        # the company's answers are what every other one was built on, so that
+        # is the drawer already open when the book lands
+        open=gid == "company",
+        href=href,
+        cta=cta,
+        items=[
+            m.AnswerItem(
+                key=q["key"],
+                label=q.get("label") or q.get("tag", q["key"]),
+                question=q["q"],
+                type=q["type"],
+                options=q.get("options", []),
+                value=said.get(q["key"], ""),
+                learned=q["learned"],
+            )
+            for q in questions
+        ],
+    )
+
+
+def _answer_book() -> m.AnswerBook:
+    groups = [_answer_group("company"), *[_answer_group(s) for s in data.SERVICE_IDS]]
+    done = sum(1 for g in groups if g.status == "complete")
+    return m.AnswerBook(
+        title="What you told me",
+        blurb=(
+            "Every answer you have ever given an onboarding, in one place. Change "
+            "one and everything built on it follows — which is the point: the brain "
+            "is only as right as the day you filled this in."
+        ),
+        summary=f"{done} of {len(groups)} set up",
+        groups=groups,
+    )
+
+
+@app.get(f"{V1}/profile/answers", response_model=m.AnswerBook)
+def get_answers(authorization: Annotated[Optional[str], Header()] = None):
+    """Everything typed into every onboarding. 401 signed out."""
+    _bearer(authorization)
+    return _answer_book()
+
+
+@app.patch(f"{V1}/profile/answers/{{gid}}/{{key}}", response_model=m.AnswerBook)
+def edit_answer(
+    gid: str,
+    key: str,
+    body: m.AnswerEdit,
+    authorization: Annotated[Optional[str], Header()] = None,
+):
+    """Change one answer. A choice only takes one of its options, and a group
+    nobody has answered yet is a 409 rather than a silent create — you cannot
+    edit the answer to a question you were never asked."""
+    _bearer(authorization)
+    group = _answer_group(gid) if gid == "company" or gid in data.SERVICE_ONBOARDING else None
+    if not group:
+        raise HTTPException(404, f"no onboarding called '{gid}'")
+    if group.status == "new":
+        raise HTTPException(409, f"'{gid}' hasn’t been set up yet — run it first")
+    item = next((i for i in group.items if i.key == key), None)
+    if not item:
+        raise HTTPException(404, f"'{gid}' was never asked '{key}'")
+    value = body.value.strip()
+    # min_length lets " " through, and an answer that strips to nothing is how
+    # you quietly poison everything built on it. Deleting one is not an edit.
+    if not value:
+        raise HTTPException(422, "an answer can be changed, but not emptied")
+    if item.options and value not in item.options:
+        raise HTTPException(422, f"'{value}' isn’t one of the options for '{key}'")
+    data.ANSWERS[gid][key] = value
+    return _answer_book()
+
+
+@app.post(f"{V1}/profile/answers/company", response_model=m.AnswerBook, status_code=201)
+def save_company_answers(body: m.AnswersIn, authorization: Annotated[Optional[str], Header()] = None):
+    """What the company onboarding heard, on its way past. The flow still runs
+    client-side and still writes its own localStorage record; this is so the
+    answers outlive that browser and can be corrected here afterwards.
+
+    Partial on purpose: the flow posts once at the end, and a founder who
+    skipped a question should not be blocked from keeping the five they gave."""
+    _bearer(authorization)
+    keys = {q["key"] for q in data.COMPANY_ONBOARDING["questions"]}
+    kept = {k: v.strip() for k, v in body.answers.items() if k in keys and v.strip()}
+    if not kept:
+        raise HTTPException(422, "nothing here matches a question I asked")
+    data.ANSWERS.setdefault("company", {}).update(kept)
+    return _answer_book()
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}

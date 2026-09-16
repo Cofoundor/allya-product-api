@@ -73,6 +73,15 @@ All paths are under `/api/v1`. Field names are **camelCase on the wire**
 | POST | `/work/{wid}/undo` | `WorkAction` |
 | POST | `/work/{wid}/revision` | `Reply` |
 | PATCH | `/knowledge/{fid}` | `Fact` — body `{flagged?, text?}` |
+| GET | `/profile` | `Profile` — you, as Allya holds you; **401** signed out |
+| PATCH | `/profile` | `Profile` — body `{name?, role?, company?}`; name and company write back to the account |
+| PATCH | `/profile/habits/{hid}` | `Profile` — body `{value}`; **422** if the habit has `options` and this isn't one |
+| PATCH | `/profile/trust/{sid}` | `Profile` — body `{level}`; one floor's leash |
+| POST | `/profile/knows` | `Profile` — body `{text}`; **201**, lands at the top marked `told` |
+| DELETE | `/profile/knows/{kid}` | `Profile` — forget one; **404** if it isn't held |
+| GET | `/profile/answers` | `AnswerBook` — every onboarding answer; **401** signed out |
+| PATCH | `/profile/answers/{gid}/{key}` | `AnswerBook` — body `{value}`; **409** if that onboarding was never run, **422** on a blank or a bad option |
+| POST | `/profile/answers/company` | `AnswerBook` — body `{answers}`; **201**, what the company onboarding heard on its way past |
 
 Status codes: `200` on success, `404` unknown surface / work / fact,
 `409` approving something already shipped or undoing something that never
@@ -95,6 +104,82 @@ it, so the UI opens that item's approval sheet from the calendar. `needsYou` on
 a day counts only entries whose work item is *still* waiting on you — approve it
 and the day's accent dot goes with it. All-day entries use `startMinute: -1`,
 which is also what sorts them to the top of a day.
+
+### You
+
+`/profile` is the founder half of the record — the company has a brain, this is
+who it answers to. Three things live on it, and only one of them is a setting:
+
+- **`knows`** — what Allya holds about *you*, not about the company. The
+  company's own facts are `/surfaces/{sid}/knowledge`; these never mix. Each
+  entry carries a `source`: `told` is something you said, `learned` is
+  something she inferred — and only `learned` carries a `note`, which is the
+  evidence. Anything you add is `told` with no note, because inventing one
+  would be the one lie this seam exists to prevent.
+- **`habits`** — how you work. A habit with a non-empty `options` only accepts
+  one of them; an empty `options` is free text.
+- **`trust`** — one leash per service floor, at `ask`, `brief` or `trusted`.
+  `ui.levels` is what the three rungs mean in general; each row's `note` is what
+  the *current* rung means on *that* floor. The note is derived on read, never
+  stored — a stored one goes stale the moment the rung moves.
+
+Every write returns the whole `Profile` rather than the piece that changed,
+because moving a rung rewrites the sentence under it and the client shouldn't
+have to reassemble that itself.
+
+Profiles are seeded per user id on first read, so editing the demo account
+doesn't rewrite the founder's.
+
+Three figures live on `stats` and earn the top of the page; the rest are on
+`statGroups`, grouped by the question they answer. `ui.lenses` names the three
+ways of reading the left-hand pane — the leash is not one of them, deliberately.
+
+**The vocabulary belongs here, not to the view.** `ui.sourceLabels` and
+`ui.connectionLabels` are what this API's enums are called on screen, the same
+idea as `/crm/lexicon`; `ui.identity` names the editable fields on the identity
+card the way a `Habit` carries its own `label`; `ui.actions` holds the words on
+the controls that act on this page's nouns (forgetting a memory, loosening a
+leash). `summaries` is the line each section puts in its own header —
+`"6 things · 2 you told me"`, `"2 want you"` — recomputed on every read so a
+write can never leave a stale count.
+
+None of that is decoration. A frontend that keeps its own copy of "you told me"
+has forked the contract: the server can change what `told` means and the screen
+will keep saying the old thing. The order of `ui.levels` matters for the same
+reason — it is what tells the interface which direction is *looser*, so adding
+a rung here cannot silently skip the confirmation the UI puts in front of it.
+
+### The answer book
+
+`/profile/answers` is every onboarding answer, readable and changeable. These
+used to be write-only: a floor's four went into `ANSWERS` and were never read
+back, and the company's six never left the browser at all. A founder who
+mistyped their revenue in week one had no way to correct it short of starting
+over, and everything downstream had already been built on it.
+
+One `AnswerGroup` per onboarding — `company`, then one per service floor. A
+floor nobody has set up is **`new`**, not a group of empty answers: it has not
+been asked yet, so the book says so and offers `href`/`cta` rather than a form
+inventing questions. Finish that floor's onboarding and its group turns
+`complete` and becomes editable, because `POST /surfaces/{sid}/onboarding`
+writes to the same `ANSWERS`. Which drawer opens (`open`), what its status is
+called (`statusLabel`) and what an unasked group says instead (`empty`) are all
+decided here too.
+
+An answer can be **changed but not emptied** (**422**), and a `choice` only
+takes one of its `options`. `learned` is the ledger line the answer added —
+the reason the question was worth asking, and what makes changing one read as
+a decision rather than editing a field.
+
+`COMPANY_ONBOARDING` in `data.py` mirrors `product-next/src/lib/onboarding-data.ts`
+rather than replacing it: the live flow still asks the questions client-side
+because it also owns the acks, the clusters and the showcase reading, none of
+which are the API's business yet. Keep `key`, `q` and `type` in step across the
+two. `POST /profile/answers/company` is how a real run's answers get here — the
+flow calls it once at the end, partial on purpose, so a founder who skipped a
+question still keeps the ones they gave.
+
+Like `ONBOARDED`, `ANSWERS` is global to the process rather than per user.
 
 ### Setting up a floor
 

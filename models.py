@@ -653,6 +653,237 @@ class Gate(Base):
     brain: BrainGraph
 
 
+# ---- you ---------------------------------------------------------------
+#
+# The company has a brain; this is the other half of the record — the founder
+# it answers to. A profile here is not a settings screen. It is what Allya
+# knows about *you* and, more importantly, what she is allowed to do without
+# coming back to you, floor by floor. Loosening that leash is the only
+# irreversible thing on the page, which is why every rung says in words what
+# it actually means.
+
+# how much of a floor reaches you before it moves
+Autonomy = Literal["ask", "brief", "trusted"]
+
+
+class TrustLevel(Base):
+    """One rung, and what picking it actually costs you."""
+
+    id: Autonomy
+    label: str
+    note: str
+
+
+class Trust(Base):
+    """One floor's leash. `note` is the current rung read back in this
+    floor's own terms — the same three rungs mean different things on
+    marketing and on sales."""
+
+    surface_id: str
+    label: str
+    href: str
+    level: Autonomy
+    note: str
+    # what this floor has actually asked of you lately, so the rung is a
+    # decision with evidence and not a preference
+    asked: str
+
+
+class Connection(Base):
+    """Something outside this product that Allya acts through. `state` is
+    the honest one: `attention` is a connection that still works and is
+    about to stop."""
+
+    id: str
+    label: str
+    account: str
+    state: Literal["live", "attention", "off"]
+    note: str
+    action: str
+    href: Optional[str] = None
+
+
+class Known(Base):
+    """One thing Allya holds about you. `source` is the seam that matters:
+    `told` is something you said, `learned` is something she inferred from
+    what you did — and only the second one owes you its evidence."""
+
+    id: str
+    text: str
+    source: Literal["told", "learned"]
+    note: Optional[str] = None
+
+
+class Habit(Base):
+    """One line about how you work. `options` empty means free text — the
+    difference between a preference with a shape and one without."""
+
+    id: str
+    label: str
+    value: str
+    note: str
+    options: list[str] = []
+
+
+class StatGroup(Base):
+    """A handful of numbers that answer one question about you. Three headline
+    figures live on `Profile.stats`; everything else is grouped here, because
+    forty numbers in a row is a dashboard and nobody reads a dashboard."""
+
+    id: str
+    label: str
+    note: str
+    stats: list[Stat]
+
+
+class Lens(Base):
+    """One way of looking at the left-hand pane. The leash never moves."""
+
+    id: str
+    label: str
+    note: str
+
+
+# ---- the answer book ---------------------------------------------------
+#
+# Everything the founder has ever typed into an onboarding, in one place and
+# editable. Until now these answers were write-only: the company's six went
+# into the browser's localStorage and a floor's four went into ANSWERS and
+# were never read back. A founder who mistyped their revenue in week one had
+# no way to correct it short of starting over.
+
+class AnswerItem(Base):
+    """One question, as it was asked, and what was said back. `learned` is
+    the line Allya added to the ledger when the answer landed — the reason
+    this question was worth asking at all."""
+
+    key: str
+    label: str
+    question: str
+    type: Literal["short", "long", "choice"]
+    options: list[str] = []
+    value: str
+    learned: str
+
+
+class AnswerGroup(Base):
+    """One onboarding. `status` is honest about floors nobody has set up:
+    they are `new` and the book offers the way in rather than empty fields.
+
+    `status_label`, `empty` and `open` are derived here rather than in the
+    interface: which drawer opens and what "never set up" is called are facts
+    about the record, not rendering decisions."""
+
+    id: str
+    label: str
+    note: str
+    status: Literal["complete", "new"]
+    status_label: str
+    # what to say instead of fields when this one has never been run
+    empty: str
+    # the drawer that opens on arrival — the one everything else was built on
+    open: bool
+    # where to go to run (or re-run) this onboarding
+    href: str
+    cta: str
+    items: list[AnswerItem]
+
+
+class AnswerBook(Base):
+    title: str
+    blurb: str
+    summary: str
+    groups: list[AnswerGroup]
+
+
+class AnswerEdit(Base):
+    value: str = Field(min_length=1, max_length=4000)
+
+
+class EditField(Base):
+    """One editable line on the identity card. Same idea as Habit: the API
+    names its own fields rather than the interface guessing at them."""
+
+    key: Literal["name", "role", "company"]
+    label: str
+
+
+class ProfileUi(Base):
+    know_title: str
+    trust_title: str
+    trust_blurb: str
+    habits_title: str
+    connections_title: str
+    stats_title: str
+    answers_title: str
+    # which way of looking at the left-hand pane; the leash never moves
+    lenses: list[Lens]
+    # the identity card names its own fields, the way habits do
+    identity: list[EditField]
+    identity_note: str
+    since_prefix: str
+    knows_empty: str
+    # What this API's enums are called in the interface — the same idea as
+    # /crm/lexicon. The words belong to the vocabulary, not to the view: an
+    # interface that hardcodes "you told me" has quietly forked the contract.
+    source_labels: dict[str, str]
+    connection_labels: dict[str, str]
+    # and the words on the controls that act on this page's nouns. Forgetting
+    # a memory and loosening a leash are domain verbs, not chrome.
+    actions: dict[str, str]
+    # the composer on this page tells her something about you rather than
+    # asking her for work, so it brings its own words — including what the
+    # suggestion popup calls them
+    placeholder: str
+    suggest_label: str
+    suggestions: list[str]
+    levels: list[TrustLevel]
+
+
+class Profile(Base):
+    """Everything the profile page renders."""
+
+    user: User
+    role: str
+    since: str
+    # Allya's own line about the page, in her voice
+    blurb: str
+    # the three that earn the top of the page
+    stats: list[Stat]
+    # and the rest, grouped by the question they answer
+    stat_groups: list[StatGroup]
+    # what she holds about you, as opposed to about the company
+    knows: list[Known]
+    habits: list[Habit]
+    trust: list[Trust]
+    connections: list[Connection]
+    # The line each section puts in its own header, derived from what's under
+    # it: "6 things · 2 you told me", "2 want you", "nothing yet". Derived
+    # here rather than counted in the view, for the same reason the leash's
+    # note is: the wording is this vocabulary's, and a view that phrases it
+    # itself is a second place the contract has to be kept in step.
+    summaries: dict[str, str]
+    ui: ProfileUi
+
+
+class ProfileEdit(Base):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    role: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    company: Optional[str] = Field(default=None, min_length=1, max_length=80)
+
+
+class HabitEdit(Base):
+    value: str = Field(min_length=1, max_length=120)
+
+
+class TrustEdit(Base):
+    level: Autonomy
+
+
+class KnownAdd(Base):
+    text: str = Field(min_length=2, max_length=240)
+
+
 # ---- the people layer --------------------------------------------------
 #
 # Every floor acts on people, and until now no floor could name one. The
